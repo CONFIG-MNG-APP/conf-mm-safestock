@@ -1,0 +1,115 @@
+/* ─── Page Title ─── */
+.ssTitleIcon {
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.ssTitleText {
+  font-size: 1.1rem !important;
+}
+
+/* ─── Header Box (wraps info cards) ─── */
+.ssHeaderBox {
+  gap: 12px;
+  padding: 4px 0 8px 0;
+}
+
+/* ─── Info Cards ─── */
+.ssInfoCard {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #0070f2;
+  border-radius: 8px;
+  padding: 14px 18px;
+  min-width: 220px;
+  flex: 0 0 auto;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.07);
+  box-sizing: border-box;
+  margin-bottom: 4px;
+}
+
+.ssInfoCard--wide {
+  flex: 1 1 auto;
+  min-width: 300px;
+}
+
+/* ─── Section Labels ─── */
+.ssSectionLabel {
+  font-weight: 700 !important;
+  font-size: 0.68rem !important;
+  color: #89919a !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ─── Field Labels & Values ─── */
+.ssFieldLabel {
+  font-size: 0.7rem !important;
+  color: #89919a !important;
+}
+
+.ssFieldValue {
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  color: #32363a !important;
+}
+
+.ssFieldIcon {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+/* ─── Request ID monospace ─── */
+.ssReqIdText {
+  font-size: 0.75rem !important;
+  font-family: monospace !important;
+  color: #32363a !important;
+  word-break: break-all;
+}
+
+/* ─── Table Toolbar ─── */
+.ssTabelToolbar {
+  background: transparent !important;
+  border-bottom: 1px solid #e8e8e8 !important;
+  padding-bottom: 8px !important;
+}
+
+/* ─── Safe Stock Table header ─── */
+.ssTable .sapMListTblHeaderCell {
+  background: #f5f6f7 !important;
+  font-weight: 600 !important;
+  font-size: 0.78rem !important;
+  color: #32363a !important;
+  border-bottom: 2px solid #0070f2 !important;
+}
+
+.ssTable .sapMListTblRow:hover {
+  background: #f0f6ff !important;
+}
+
+.ssTable .sapMLIBFocused {
+  outline: 2px solid #0070f2 !important;
+}
+
+/* ─── Table Cells ─── */
+.ssCellText {
+  font-size: 0.85rem !important;
+  color: #32363a !important;
+  padding: 2px 0;
+}
+
+.ssVersionBadge {
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  color: #6a6d70 !important;
+}
+
+/* ─── Input compact in table ─── */
+.ssTable .sapMInputBase {
+  height: 2rem !important;
+}
+
+.ssTable .sapMInputBaseInner {
+  font-size: 0.82rem !important;
+  padding: 0 6px !important;
+}
