@@ -111,7 +111,7 @@
                 <Text text="Title" class="ssFieldLabel" />
                 <Input
                   value="{request>/Title}"
-                  editable="{= !${ui>/requestCreated} }"
+                  editable="{= ${request>/Status} !== 'SUBMITTED' &amp;&amp; ${request>/Status} !== 'APPROVED' }"
                   width="100%"
                   placeholder="Short title for this request" />
               </VBox>
@@ -124,7 +124,7 @@
                 <Text text="Reason for Change" class="ssFieldLabel" />
                 <TextArea
                   value="{request>/Reason}"
-                  editable="{= !${ui>/requestCreated} }"
+                  editable="{= ${request>/Status} !== 'SUBMITTED' &amp;&amp; ${request>/Status} !== 'APPROVED' }"
                   rows="3"
                   width="100%"
                   placeholder="Why is this safe stock change needed?" />
@@ -253,7 +253,7 @@
             inset="false"
             noDataText="No safe stock lines found."
             class="ssTable"
-            items="{ path: '/MMSafeStock' }">
+            items="{ path: 'tableData>/rows' }">
 
           <columns>
             <Column width="8rem"><Text text="Action"/></Column>

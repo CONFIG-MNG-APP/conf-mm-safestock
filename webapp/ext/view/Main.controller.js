@@ -79,23 +79,47 @@ sap.ui.define(
             "request"
           );
 
+          // Initialize table data model
+          this.getView().setModel(new JSONModel({ rows: [] }), "tableData");
+
           if (bHasReqId) {
             this.getView().getModel("ui").setProperty("/requestCreated", true);
             this.getView().getModel("ui").setProperty("/editMode", false);
-
-            // Filter table theo ReqId từ URL
-            const oTable = this.byId("safeStockTable");
-            oTable.bindItems({
-              path: "/MMSafeStock",
-              filters: [
-                new Filter("ReqId", FilterOperator.EQ, oRequestContext.ReqId),
-              ],
-              template: oTable.getBindingInfo("items").template,
-            });
+            this._loadMainTable(oRequestContext.ReqId);
+          } else {
+            // Initial state without ReqId
+            this.getView().getModel("ui").setProperty("/editMode", false);
           }
-
-          console.log("requestContext =", oRequestContext);
         },
+
+        // ── Load Data ──────────────────────────────────────────────────
+
+        _loadMainTable: async function (sReqId) {
+          try {
+            const sSapClient = this._getSapClient();
+            const sServiceUrl = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/MMSafeStock?$filter=ReqId eq '${sReqId}'&$top=500&sap-client=${sSapClient}`;
+
+            const oResp = await fetch(sServiceUrl, {
+              headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" }
+            });
+            if (!oResp.ok) throw new Error("Failed to load request data");
+            const oData = await oResp.json();
+
+            const aRows = (oData.value || []).map(r => ({
+              ...r,
+              _state: "unchanged",
+              _reqItemId: { ReqId: r.ReqId, ReqItemId: r.ReqItemId, ItemId: r.ItemId }
+            }));
+
+            this.getView().getModel("tableData").setProperty("/rows", aRows);
+            this._applyBaseFilter();
+          } catch (e) {
+            console.error("Load failed:", e);
+            MessageToast.show("Error loading data");
+          }
+        },
+
+        // ── Actions ────────────────────────────────────────────────────
 
         onCreateRequest: async function () {
           const oView = this.getView();
@@ -164,36 +188,26 @@ sap.ui.define(
               "'&$orderby=CreatedAt desc&$top=1&$select=ReqId,Status&sap-client=" + sSapClient;
 
             const oQueryResp = await fetch(sQueryUrl, {
-              headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
-              credentials: "include",
+              headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" }
             });
-            if (!oQueryResp.ok) { MessageBox.error("Request created but could not retrieve ReqId"); return; }
+            if (!oQueryResp.ok) throw new Error("Could not retrieve ReqId");
 
             const oQueryData = await oQueryResp.json();
             const aResults = oQueryData?.value || [];
-            if (!aResults.length || !aResults[0].ReqId) {
-              MessageBox.error("Request created but ReqId not found");
-              return;
-            }
+            if (!aResults.length || !aResults[0].ReqId) throw new Error("ReqId not found");
 
             const sNewReqId = aResults[0].ReqId;
-
             oRequestModel.setProperty("/ReqId", sNewReqId);
             oRequestModel.setProperty("/Status", "Draft");
             oRequestModel.setProperty("/StatusState", "Information");
 
             oView.getModel("ui").setProperty("/requestCreated", true);
-            oView.getModel("ui").setProperty("/editMode", true);  // Auto enter edit mode
+            oView.getModel("ui").setProperty("/editMode", true);
 
-            // Rebind table with new ReqId
-            const oTable = this.byId("safeStockTable");
-            oTable.bindItems({
-              path: "/MMSafeStock",
-              filters: [new Filter("ReqId", FilterOperator.EQ, sNewReqId)],
-              template: oTable.getBindingInfo("items").template,
-            });
-
+            // Fetch the populated draft items back out
+            await this._loadMainTable(sNewReqId);
             MessageToast.show("Request created: " + sNewReqId);
+
           } catch (e) {
             console.error(e);
             MessageBox.error(e?.message || "Failed to create request.");
@@ -202,9 +216,68 @@ sap.ui.define(
           }
         },
 
-        _getSapClient: function () {
-          return new URLSearchParams(window.location.search).get("sap-client") || "324";
+        onEdit: function () {
+          this.getView().getModel("ui").setProperty("/editMode", true);
+          // Mark all items ready for potential changes
+          const aRows = this.getView().getModel("tableData").getProperty("/rows");
+          aRows.forEach(r => {
+            if (!r._state) r._state = "unchanged";
+          });
         },
+
+        onAddLine: function () {
+          const aRows = this.getView().getModel("tableData").getProperty("/rows");
+          const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "";
+
+          aRows.unshift({
+            EnvId: sEnvId,
+            PlantId: "",
+            MatGroup: "",
+            MinQty: 0,
+            VersionNo: 0,
+            ActionType: "C",
+            _state: "new"
+          });
+          this.getView().getModel("tableData").setProperty("/rows", aRows);
+          this._applyBaseFilter();
+        },
+
+        onDeleteLine: function () {
+          const oTable = this.byId("safeStockTable");
+          const aSelected = oTable.getSelectedContexts();
+          if (!aSelected.length) {
+            MessageToast.show("Please select at least one line.");
+            return;
+          }
+
+          aSelected.forEach((oCtx) => {
+            const oRow = oCtx.getObject();
+            if (oRow._state === "new") {
+              oRow._state = "discard";
+            } else {
+              oRow._state = "deleted";
+              oRow.ActionType = "X";
+            }
+          });
+
+          // Xóa các dòng 'discard' khỏi UI
+          let aRows = this.getView().getModel("tableData").getProperty("/rows");
+          aRows = aRows.filter(r => r._state !== "discard");
+          this.getView().getModel("tableData").setProperty("/rows", aRows);
+
+          oTable.removeSelections(true);
+          this._applyBaseFilter();
+          MessageToast.show(`${aSelected.length} line(s) marked for deletion.`);
+        },
+
+        onCancel: async function () {
+          const sReqId = this.getView().getModel("request").getProperty("/ReqId");
+          this.getView().getModel("ui").setProperty("/editMode", false);
+          if (sReqId) await this._loadMainTable(sReqId);
+          MessageToast.show("Changes discarded");
+        },
+
+        // ── Draft Choreography ─────────────────────────────────────────
 
         _fetchCsrfToken: async function (sServiceUrl) {
           const oResp = await fetch(sServiceUrl, {
@@ -212,107 +285,206 @@ sap.ui.define(
             headers: { "X-CSRF-Token": "Fetch", "X-Requested-With": "XMLHttpRequest" },
             credentials: "include",
           });
-          if (!oResp.ok) return null;
-          return oResp.headers.get("X-CSRF-Token") || null;
+          return oResp.ok ? oResp.headers.get("X-CSRF-Token") : null;
         },
 
-        onEdit: function () {
-          this.getView().getModel("ui").setProperty("/editMode", true);
+        _postAndActivateReqRow: async function (sReqId, oPayload, sCsrfToken, sSapClient) {
+          const sBase = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/`;
+
+          // 1. Create Draft
+          const oPostResp = await fetch(sBase + `MMSafeStock?sap-client=${sSapClient}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" },
+            body: JSON.stringify({
+              ReqId: sReqId, EnvId: oPayload.EnvId, PlantId: oPayload.PlantId, MatGroup: oPayload.MatGroup, MinQty: oPayload.MinQty, ActionType: oPayload.ActionType
+            })
+          });
+          if (!oPostResp.ok) throw new Error("Failed to create draft row: " + (await oPostResp.text()));
+          const oCreated = await oPostResp.json();
+
+          // 2. Activate Draft
+          const sActivateUrl = `${sBase}MMSafeStock(ReqId=${oCreated.ReqId},ReqItemId=${oCreated.ReqItemId},ItemId=${oCreated.ItemId},IsActiveEntity=false)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Activate?sap-client=${sSapClient}`;
+          const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
+          if (!oActResp.ok) throw new Error("Failed to activate created draft: " + (await oActResp.text()));
+          return oCreated;
         },
 
-        onAddLine: function () {
-          const oTable = this.byId("safeStockTable");
-          const oBinding = oTable.getBinding("items");
-          if (!oBinding) {
-            MessageToast.show("No data binding — create a request first.");
-            return;
-          }
-          // Create a transient context on the OData model
-          try {
-            oBinding.create({
-              EnvId: "",
-              PlantId: "",
-              MatGroup: "",
-              MinQty: 0,
-              ActionType: "C"
-            });
-          } catch (e) {
-            // Fallback: notify user
-            MessageToast.show("Add line is only supported when connected to the backend.");
-            console.warn("onAddLine:", e);
-          }
+        _editPatchActivateReqRow: async function (oKeys, oPayload, sCsrfToken, sSapClient) {
+          const sBase = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/`;
+          const sKeyPath = `ReqId=${oKeys.ReqId},ReqItemId=${oKeys.ReqItemId},ItemId=${oKeys.ItemId}`;
+
+          // 1. Edit (creates draft from active)
+          const sEditUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=true)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Edit?sap-client=${sSapClient}`;
+          const oEditResp = await fetch(sEditUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: JSON.stringify({ PreserveChanges: true }) });
+          if (!oEditResp.ok) throw new Error("Failed to start Edit on row: " + (await oEditResp.text()));
+
+          // 2. PATCH draft
+          const sPatchUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=false)?sap-client=${sSapClient}`;
+          const oPatchResp = await fetch(sPatchUrl, { method: "PATCH", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: JSON.stringify(oPayload) });
+          if (!oPatchResp.ok) throw new Error("Failed to UPDATE draft row: " + (await oPatchResp.text()));
+
+          // 3. Activate
+          const sActivateUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=false)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Activate?sap-client=${sSapClient}`;
+          const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
+          if (!oActResp.ok) throw new Error("Failed to activate updated draft: " + (await oActResp.text()));
         },
 
-        onDeleteLine: function () {
-          const oTable = this.byId("safeStockTable");
-          const aSelected = oTable.getSelectedItems();
-          if (!aSelected || aSelected.length === 0) {
-            MessageToast.show("Please select at least one line to delete.");
-            return;
-          }
-          MessageBox.confirm(
-            `Delete ${aSelected.length} selected line(s)?`,
-            {
-              onClose: (sAction) => {
-                if (sAction !== "OK") return;
-                aSelected.forEach((oItem) => {
-                  const oCtx = oItem.getBindingContext();
-                  if (oCtx) {
-                    try { oCtx.delete("$auto"); } catch (e) { console.warn(e); }
-                  }
-                });
-                oTable.removeSelections(true);
-                MessageToast.show(`${aSelected.length} line(s) marked for deletion.`);
-              }
-            }
-          );
-        },
-
-        onCancel: function () {
-          const oModel =
-            this.getView().getModel() || this.getOwnerComponent().getModel();
-          try {
-            oModel.resetChanges("$auto");
-          } catch (e) {
-            console.warn(e);
-          }
-          this.getView().getModel("ui").setProperty("/editMode", false);
-          MessageToast.show("Changes discarded");
-        },
+        // ── Save & Submit ──────────────────────────────────────────────
 
         onSave: async function () {
           const oView = this.getView();
-          const oModel = oView.getModel();
-          oView.setBusy(true);
+          const sReqId = oView.getModel("request").getProperty("/ReqId");
+          const sTitle = oView.getModel("request").getProperty("/Title");
+          const sReason = oView.getModel("request").getProperty("/Reason");
+          if (!sReqId) return;
+
           try {
-            await oModel.submitBatch("$auto");
+            oView.setBusy(true);
+            const sSapClient = this._getSapClient();
+            const sServiceToken = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/?sap-client=${sSapClient}`;
+            const sCsrfToken = await this._fetchCsrfToken(sServiceToken);
+            if (!sCsrfToken) throw new Error("Missing CSRF token");
+
+            const aRows = oView.getModel("tableData").getProperty("/rows");
+            let iSaved = 0;
+
+            for (const row of aRows) {
+              const oPayload = {
+                EnvId: row.EnvId || "", PlantId: row.PlantId || "", MatGroup: row.MatGroup || "",
+                MinQty: parseInt(row.MinQty, 10) || 0, ActionType: row.ActionType || "U"
+              };
+
+              if (row._state === "new") {
+                await this._postAndActivateReqRow(sReqId, oPayload, sCsrfToken, sSapClient);
+                iSaved++;
+              } else if (row._state === "deleted" || row._state === "modified" || row._state === "unchanged") {
+                await this._editPatchActivateReqRow(row._reqItemId, oPayload, sCsrfToken, sSapClient);
+                iSaved++;
+              }
+            }
+
+            if (sReqId) await this._patchRequestHeader(sReqId, sTitle, sReason, sCsrfToken, sSapClient, null);
+
+            await this._loadMainTable(sReqId);
             oView.getModel("ui").setProperty("/editMode", false);
-            MessageToast.show("Saved successfully");
+            MessageToast.show("Saved to request successfully.");
           } catch (e) {
             console.error(e);
-            MessageBox.error("Save failed");
+            MessageBox.error(e.message || "Save failed");
+          } finally {
+            oView.setBusy(false);
           }
-          oView.setBusy(false);
         },
 
         onSubmitRequest: function () {
           const oRequestModel = this.getView().getModel("request");
           const sReqId = oRequestModel.getProperty("/ReqId");
+          const sStatus = oRequestModel.getProperty("/Status") || "";
 
           if (!sReqId) {
             MessageBox.warning("Request has not been created yet.");
             return;
           }
 
+          if (sStatus && sStatus.toUpperCase() !== "DRAFT") {
+            MessageBox.warning("Only DRAFT requests can be submitted. Current status: " + sStatus);
+            return;
+          }
+
           MessageBox.confirm("Submit this request for approval?", {
-            onClose: (sAction) => {
-              if (sAction === "OK") {
-                oRequestModel.setProperty("/Status", "Submitted");
+            onClose: async (sAction) => {
+              if (sAction !== "OK") return;
+
+              const oView = this.getView();
+              try {
+                oView.setBusy(true);
+
+                const sSapClient = this._getSapClient();
+                const sServiceUrl = "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/?sap-client=" + sSapClient;
+                const sCsrfToken = await this._fetchCsrfToken(sServiceUrl);
+                if (!sCsrfToken) { MessageBox.error("Cannot fetch CSRF token"); return; }
+
+                // Patch title/reason vào request header trước khi submit
+                const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+                const sTitle = oRequestModel.getProperty("/Title") || "";
+                const sReason = oRequestModel.getProperty("/Reason") || "";
+                await this._patchRequestHeader(sReqId, sTitle, sReason, sCsrfToken, sSapClient, sEnvId);
+
+                // Gọi bound action submit trên backend
+                const sActionUrl =
+                  "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/" +
+                  "ZC_CONF_REQ_H(ReqId=" + sReqId + ",EnvId='" + sEnvId + "',IsActiveEntity=true)/" +
+                  "com.sap.gateway.srvd.zsd_conf_req.v0001.submit" +
+                  "?sap-client=" + sSapClient;
+
+                const oResponse = await fetch(sActionUrl, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": sCsrfToken,
+                    "X-Requested-With": "XMLHttpRequest",
+                    Accept: "application/json",
+                  },
+                  credentials: "include",
+                  body: JSON.stringify({}),
+                });
+
+                if (!oResponse.ok) {
+                  const oErr = await oResponse.json().catch(() => ({}));
+                  const aDetails = oErr?.error?.details;
+                  const sMsg = (Array.isArray(aDetails) && aDetails.length)
+                    ? aDetails.map(d => d.message).join("\n")
+                    : (oErr?.error?.message || "Submit failed: " + oResponse.status);
+                  MessageBox.error(sMsg);
+                  return;
+                }
+
+                oRequestModel.setProperty("/Status", "SUBMITTED");
                 oRequestModel.setProperty("/StatusState", "Success");
-                this.getView().getModel("ui").setProperty("/editMode", false);
-                MessageToast.show("Request submitted");
+                oView.getModel("ui").setProperty("/editMode", false);
+
+                const sConfName = oView.getModel("requestContext").getProperty("/ConfName") || "Configuration";
+                MessageBox.success(
+                  "Request \"" + (sTitle || sReqId) + "\" has been submitted for approval.\n\n" +
+                  "Your manager will review the proposed changes to \"" + sConfName + "\" and approve or reject them.",
+                  {
+                    title: "Request Submitted Successfully",
+                    actions: [MessageBox.Action.OK],
+                    emphasizedAction: MessageBox.Action.OK,
+                    onClose: function () { window.history.back(); },
+                  }
+                );
+              } catch (e) {
+                console.error(e);
+                MessageBox.error(e?.message || "Submit failed");
+              } finally {
+                oView.setBusy(false);
               }
             },
+          });
+        },
+
+        _patchRequestHeader: async function (sReqId, sTitle, sReason, sCsrfToken, sSapClient, sEnvId) {
+          if (!sReqId) return;
+          const sEnv = sEnvId || "DEV";
+          const sPatchUrl =
+            "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/" +
+            "ZC_CONF_REQ_H(ReqId=" + sReqId + ",EnvId='" + sEnv + "',IsActiveEntity=false)" +
+            "?sap-client=" + (sSapClient || this._getSapClient());
+
+          await fetch(sPatchUrl, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": sCsrfToken,
+              "X-Requested-With": "XMLHttpRequest",
+              Accept: "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({
+              ReqTitle: sTitle || "",
+              Reason: sReason || "",
+            }),
           });
         },
 
@@ -327,31 +499,24 @@ sap.ui.define(
         },
 
         onRefresh: function () {
-          const oBinding = this.byId("safeStockTable").getBinding("items");
-          if (oBinding) oBinding.refresh();
+          const sReqId = this.getView().getModel("request").getProperty("/ReqId");
+          if (sReqId) this._loadMainTable(sReqId);
           MessageToast.show("Refreshed");
+        },
+
+        _applyBaseFilter: function () {
+          this.onSearch();
         },
 
         onSearch: function () {
           const oBinding = this.byId("safeStockTable").getBinding("items");
+          if (!oBinding) return;
           const oFilterData = this.getView().getModel("filter").getData();
           const aFilters = [];
 
-          // ReqId filter luôn giữ nếu có
-          const sReqId = this.getView().getModel("request").getProperty("/ReqId");
-          if (sReqId) {
-            aFilters.push(new Filter("ReqId", FilterOperator.EQ, sReqId));
-          }
-
-          if (oFilterData.EnvId) {
-            aFilters.push(new Filter("EnvId", FilterOperator.Contains, oFilterData.EnvId));
-          }
-          if (oFilterData.PlantId) {
-            aFilters.push(new Filter("PlantId", FilterOperator.Contains, oFilterData.PlantId));
-          }
-          if (oFilterData.MatGroup) {
-            aFilters.push(new Filter("MatGroup", FilterOperator.Contains, oFilterData.MatGroup));
-          }
+          if (oFilterData.EnvId) aFilters.push(new Filter("EnvId", FilterOperator.Contains, oFilterData.EnvId));
+          if (oFilterData.PlantId) aFilters.push(new Filter("PlantId", FilterOperator.Contains, oFilterData.PlantId));
+          if (oFilterData.MatGroup) aFilters.push(new Filter("MatGroup", FilterOperator.Contains, oFilterData.MatGroup));
 
           const sSearch = this.byId("searchField").getValue();
           if (sSearch) {
@@ -373,17 +538,12 @@ sap.ui.define(
         onClearFilters: function () {
           this.getView().getModel("filter").setData({ EnvId: "", PlantId: "", MatGroup: "" });
           this.byId("searchField").setValue("");
-
-          // Giữ lại filter ReqId khi clear
-          const sReqId = this.getView().getModel("request").getProperty("/ReqId");
-          const aFilters = sReqId
-            ? [new Filter("ReqId", FilterOperator.EQ, sReqId)]
-            : [];
-
-          const oBinding = this.byId("safeStockTable").getBinding("items");
-          if (oBinding) oBinding.filter(aFilters);
-
+          this.onSearch();
           MessageToast.show("Filters cleared");
+        },
+
+        _getSapClient: function () {
+          return new URLSearchParams(window.location.search).get("sap-client") || "324";
         },
 
         onValueHelpEnv: function () {
@@ -392,19 +552,11 @@ sap.ui.define(
               title: "Select Environment",
               liveChange: (oEvent) => {
                 const sValue = oEvent.getParameter("value");
-                oEvent.getSource().getBinding("items")
-                  .filter([new Filter("EnvId", FilterOperator.Contains, sValue)]);
-              },
-              search: (oEvent) => {
-                const sValue = oEvent.getParameter("value");
-                oEvent.getSource().getBinding("items")
-                  .filter([new Filter("EnvId", FilterOperator.Contains, sValue)]);
+                oEvent.getSource().getBinding("items").filter([new Filter("EnvId", FilterOperator.Contains, sValue)]);
               },
               confirm: (oEvent) => {
                 const oItem = oEvent.getParameter("selectedItem");
-                if (oItem) {
-                  this.getView().getModel("filter").setProperty("/EnvId", oItem.getTitle());
-                }
+                if (oItem) this.getView().getModel("filter").setProperty("/EnvId", oItem.getTitle());
               },
             });
             this._oEnvDialog.bindAggregation("items", {
@@ -422,19 +574,11 @@ sap.ui.define(
               title: "Select Plant",
               liveChange: (oEvent) => {
                 const sValue = oEvent.getParameter("value");
-                oEvent.getSource().getBinding("items")
-                  .filter([new Filter("PlantId", FilterOperator.Contains, sValue)]);
-              },
-              search: (oEvent) => {
-                const sValue = oEvent.getParameter("value");
-                oEvent.getSource().getBinding("items")
-                  .filter([new Filter("PlantId", FilterOperator.Contains, sValue)]);
+                oEvent.getSource().getBinding("items").filter([new Filter("PlantId", FilterOperator.Contains, sValue)]);
               },
               confirm: (oEvent) => {
                 const oItem = oEvent.getParameter("selectedItem");
-                if (oItem) {
-                  this.getView().getModel("filter").setProperty("/PlantId", oItem.getTitle());
-                }
+                if (oItem) this.getView().getModel("filter").setProperty("/PlantId", oItem.getTitle());
               },
             });
             this._oPlantDialog.bindAggregation("items", {
@@ -445,6 +589,7 @@ sap.ui.define(
           }
           this._oPlantDialog.open();
         },
+
       }
     );
   }
