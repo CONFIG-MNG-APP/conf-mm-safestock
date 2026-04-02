@@ -72,9 +72,12 @@ sap.ui.define(
           this.getView().setModel(
             new JSONModel({
               ReqId: oRequestContext.ReqId || "",
+              ReqItemId: "",
+              ConfId: oRequestContext.ConfId || "",
               Status: bHasReqId ? "Draft" : "Not Created",
               StatusState: bHasReqId ? "Information" : "None",
               Reason: "",
+              Title: "",
             }),
             "request"
           );
@@ -85,6 +88,7 @@ sap.ui.define(
           if (bHasReqId) {
             this.getView().getModel("ui").setProperty("/requestCreated", true);
             this.getView().getModel("ui").setProperty("/editMode", false);
+            this._fetchReqItem(oRequestContext.ReqId);
             this._loadMainTable(oRequestContext.ReqId);
           } else {
             // Initial state without ReqId
@@ -94,28 +98,104 @@ sap.ui.define(
 
         // ── Load Data ──────────────────────────────────────────────────
 
-        _loadMainTable: async function (sReqId) {
+        _fetchReqItem: async function (sReqId) {
           try {
             const sSapClient = this._getSapClient();
-            const sServiceUrl = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/MMSafeStock?$filter=ReqId eq '${sReqId}'&$top=500&sap-client=${sSapClient}`;
+            const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+            const sUrl = `/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/ZC_CONF_REQ_H(ReqId=${sReqId},EnvId='${sEnvId}',IsActiveEntity=true)/_Items?$select=ReqItemId&$top=1&sap-client=${sSapClient}`;
 
-            const oResp = await fetch(sServiceUrl, {
-              headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" }
-            });
-            if (!oResp.ok) throw new Error("Failed to load request data");
+            const oResp = await fetch(sUrl, { headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" } });
+            if (!oResp.ok) return;
             const oData = await oResp.json();
+            const aItems = oData.value || [];
+            if (!aItems.length) return;
 
-            const aRows = (oData.value || []).map(r => ({
-              ...r,
-              _state: "unchanged",
-              _reqItemId: { ReqId: r.ReqId, ReqItemId: r.ReqItemId, ItemId: r.ItemId }
-            }));
+            this.getView().getModel("request").setProperty("/ReqItemId", aItems[0].ReqItemId || "");
+          } catch (e) {
+            console.warn("_fetchReqItem failed", e);
+          }
+        },
 
+        _getMmSafeStockServiceUrl: function () {
+          return "/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/";
+        },
+
+        _loadMainTable: async function (sReqId) {
+          if (!sReqId) return;
+          const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+          await this._loadMainTableWithOverlay(sEnvId, sReqId);
+        },
+
+        _loadMainTableWithOverlay: async function (sEnvId, sReqId) {
+          try {
+            const sBaseUrl = this._getMmSafeStockServiceUrl();
+            const sClient = this._getSapClient();
+
+            const [oMainResp, oReqResp] = await Promise.all([
+              fetch(`${sBaseUrl}MMSafeStockMain?$filter=EnvId eq '${sEnvId}'&$orderby=PlantId,MatGroup&sap-client=${sClient}`, {
+                headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+                credentials: "include"
+              }),
+              fetch(`${sBaseUrl}MMSafeStock?$filter=ReqId eq ${sReqId}&$select=ItemId,ReqId,ReqItemId,SourceItemId,ActionType,EnvId,PlantId,MatGroup,MinQty,VersionNo,ChangeNote&$top=500&sap-client=${sClient}`, {
+                headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+                credentials: "include"
+              })
+            ]);
+
+            const aMain = oMainResp.ok ? (await oMainResp.json()).value || [] : [];
+            const aReq = oReqResp.ok ? (await oReqResp.json()).value || [] : [];
+
+            console.log("[SafeStock] aMain count:", aMain.length, "aReq count:", aReq.length);
+
+            const isNullGuid = id => !id || id === "00000000-0000-0000-0000-000000000000";
+            const mapReqBySrc = {};
+            aReq.forEach(r => {
+              if (!isNullGuid(r.SourceItemId)) mapReqBySrc[r.SourceItemId] = r;
+            });
+
+            const aRows = aMain.map(m => {
+              const r = mapReqBySrc[m.ItemId];
+              if (r) {
+                return {
+                  ...r,
+                  _state: r.ActionType === "X" ? "deleted" : "modified",
+                  _reqItemId: { ReqId: r.ReqId, ReqItemId: r.ReqItemId, ItemId: r.ItemId }
+                };
+              }
+              return {
+                ...m,
+                ActionType: "",
+                ChangeNote: "",
+                _state: "unchanged",
+                _reqItemId: null
+              };
+            });
+
+            // 1. Thêm các dòng "new" (không có SourceItemId hợp lệ)
+            aReq.filter(r => isNullGuid(r.SourceItemId)).forEach(r => {
+              aRows.push({
+                ...r,
+                _state: "new",
+                _reqItemId: { ReqId: r.ReqId, ReqItemId: r.ReqItemId, ItemId: r.ItemId }
+              });
+            });
+
+            // 2. Xử lý các dòng "deleted" (có SourceItemId nhưng không tồn tại trong Main nữa)
+            const setMainIds = new Set(aMain.map(m => m.ItemId));
+            aReq.filter(r => r.ActionType === "X" && !isNullGuid(r.SourceItemId) && !setMainIds.has(r.SourceItemId)).forEach(r => {
+              aRows.push({
+                ...r,
+                _state: "deleted",
+                _reqItemId: { ReqId: r.ReqId, ReqItemId: r.ReqItemId, ItemId: r.ItemId }
+              });
+            });
+
+            this._aMainRows = aMain.map(m => ({ ...m }));
             this.getView().getModel("tableData").setProperty("/rows", aRows);
             this._applyBaseFilter();
           } catch (e) {
-            console.error("Load failed:", e);
-            MessageToast.show("Error loading data");
+            console.error("Overlay Load failed:", e);
+            MessageToast.show("Error loading data with overlay");
           }
         },
 
@@ -181,11 +261,11 @@ sap.ui.define(
               return;
             }
 
-            // Lấy ReqId mới nhất của ConfId
+            // Lấy ReqId, EnvId mới nhất của ConfId (EnvId cần thiết để xây đúng key OData sau này)
             const sQueryUrl =
               "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/" +
-              "ZC_CONF_REQ_H?$filter=ConfId eq '" + oRequestCtx.ConfId +
-              "'&$orderby=CreatedAt desc&$top=1&$select=ReqId,Status&sap-client=" + sSapClient;
+              "ZC_CONF_REQ_H?$filter=ConfId eq " + oRequestCtx.ConfId +
+              "&$orderby=CreatedAt desc&$top=1&$select=ReqId,EnvId,Status&sap-client=" + sSapClient;
 
             const oQueryResp = await fetch(sQueryUrl, {
               headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" }
@@ -197,7 +277,17 @@ sap.ui.define(
             if (!aResults.length || !aResults[0].ReqId) throw new Error("ReqId not found");
 
             const sNewReqId = aResults[0].ReqId;
+            // Luôn dùng EnvId thực tế từ DB để tránh 404 khi build key OData
+            const sActualEnvId = aResults[0].EnvId || oRequestCtx.EnvId || "DEV";
+            oView.getModel("requestContext").setProperty("/EnvId", sActualEnvId);
+
+            await this._fetchReqItem(sNewReqId);
+
+            // Apply the user's Title and Reason explicitly to override ABAP defaults
+            await this._patchRequestHeader(sNewReqId, sTitle, sReason, sCsrfToken, sSapClient, sActualEnvId);
+
             oRequestModel.setProperty("/ReqId", sNewReqId);
+            oRequestModel.setProperty("/EnvId", sActualEnvId);
             oRequestModel.setProperty("/Status", "Draft");
             oRequestModel.setProperty("/StatusState", "Information");
 
@@ -217,17 +307,21 @@ sap.ui.define(
         },
 
         onEdit: function () {
-          this.getView().getModel("ui").setProperty("/editMode", true);
-          // Mark all items ready for potential changes
+          const oUi = this.getView().getModel("ui");
+          oUi.setProperty("/editMode", true);
+          // Snapshot the current rows for change-detection during Save
           const aRows = this.getView().getModel("tableData").getProperty("/rows");
-          aRows.forEach(r => {
-            if (!r._state) r._state = "unchanged";
-          });
+          aRows.forEach(r => { if (!r._state) r._state = "unchanged"; });
+          // Keep a deep snapshot of Master Data rows for dirty comparison
+          if (!this._aMainRows) {
+            this._aMainRows = aRows.filter(r => r._state === "unchanged").map(r => ({ ...r }));
+          }
+          this.getView().getModel("tableData").setProperty("/rows", aRows);
         },
 
         onAddLine: function () {
           const aRows = this.getView().getModel("tableData").getProperty("/rows");
-          const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "";
+          const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
 
           aRows.unshift({
             EnvId: sEnvId,
@@ -235,6 +329,7 @@ sap.ui.define(
             MatGroup: "",
             MinQty: 0,
             VersionNo: 0,
+            ChangeNote: "",
             ActionType: "C",
             _state: "new"
           });
@@ -272,8 +367,12 @@ sap.ui.define(
 
         onCancel: async function () {
           const sReqId = this.getView().getModel("request").getProperty("/ReqId");
+          const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
           this.getView().getModel("ui").setProperty("/editMode", false);
-          if (sReqId) await this._loadMainTable(sReqId);
+          this._aMainRows = null; // reset snapshot so next onEdit re-captures it
+          if (sReqId) {
+            await this._loadMainTableWithOverlay(sEnvId, sReqId);
+          }
           MessageToast.show("Changes discarded");
         },
 
@@ -288,23 +387,29 @@ sap.ui.define(
           return oResp.ok ? oResp.headers.get("X-CSRF-Token") : null;
         },
 
-        _postAndActivateReqRow: async function (sReqId, oPayload, sCsrfToken, sSapClient) {
+        _postAndActivateReqRow: async function (sReqId, sReqItemId, sConfId, oPayload, sCsrfToken, sSapClient) {
           const sBase = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/`;
 
           // 1. Create Draft
+          const oPostBody = {
+            ReqId: sReqId, ReqItemId: sReqItemId, ConfId: sConfId,
+            EnvId: oPayload.EnvId, PlantId: oPayload.PlantId, MatGroup: oPayload.MatGroup,
+            MinQty: oPayload.MinQty, ActionType: oPayload.ActionType
+          };
+          // Chỉ gửi SourceItemId khi có giá trị (backend từ chối empty string)
+          if (oPayload.SourceItemId) oPostBody.SourceItemId = oPayload.SourceItemId;
+
           const oPostResp = await fetch(sBase + `MMSafeStock?sap-client=${sSapClient}`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" },
-            body: JSON.stringify({
-              ReqId: sReqId, EnvId: oPayload.EnvId, PlantId: oPayload.PlantId, MatGroup: oPayload.MatGroup, MinQty: oPayload.MinQty, ActionType: oPayload.ActionType
-            })
+            body: JSON.stringify(oPostBody)
           });
           if (!oPostResp.ok) throw new Error("Failed to create draft row: " + (await oPostResp.text()));
           const oCreated = await oPostResp.json();
 
           // 2. Activate Draft
           const sActivateUrl = `${sBase}MMSafeStock(ReqId=${oCreated.ReqId},ReqItemId=${oCreated.ReqItemId},ItemId=${oCreated.ItemId},IsActiveEntity=false)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Activate?sap-client=${sSapClient}`;
-          const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
+          const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
           if (!oActResp.ok) throw new Error("Failed to activate created draft: " + (await oActResp.text()));
           return oCreated;
         },
@@ -325,49 +430,160 @@ sap.ui.define(
 
           // 3. Activate
           const sActivateUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=false)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Activate?sap-client=${sSapClient}`;
-          const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
+          const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
           if (!oActResp.ok) throw new Error("Failed to activate updated draft: " + (await oActResp.text()));
         },
 
         // ── Save & Submit ──────────────────────────────────────────────
 
+        _validateRows: function (aRows) {
+          const aErrors = [];
+          const aRequired = [
+            { field: "PlantId", label: "Plant" },
+            { field: "MatGroup", label: "Material Group" }
+          ];
+          aRows.forEach((row, idx) => {
+            // Reset cũ
+            Object.keys(row).forEach(k => { if (k.startsWith("_vs_")) row[k] = "None"; });
+            if (row._state === "deleted") return;
+            const sLabel = "Row " + (idx + 1);
+            aRequired.forEach(({ field, label }) => {
+              if (!String(row[field] || "").trim()) {
+                row["_vs_" + field] = "Error";
+                aErrors.push(sLabel + ": " + label + " is required.");
+              }
+            });
+            if (!row.MinQty && row.MinQty !== 0) {
+              row["_vs_MinQty"] = "Error";
+              aErrors.push(sLabel + ": Min Quantity is required.");
+            }
+          });
+          return aErrors;
+        },
+
         onSave: async function () {
           const oView = this.getView();
           const sReqId = oView.getModel("request").getProperty("/ReqId");
+          const sReqItemId = oView.getModel("request").getProperty("/ReqItemId");
+          const sConfId = oView.getModel("request").getProperty("/ConfId");
           const sTitle = oView.getModel("request").getProperty("/Title");
           const sReason = oView.getModel("request").getProperty("/Reason");
           if (!sReqId) return;
 
+          const oTableModel = oView.getModel("tableData");
+          const aRows = oTableModel.getProperty("/rows");
+
+          // 1. Validate
+          const aErrors = this._validateRows(aRows);
+          oTableModel.setProperty("/rows", aRows); // re-render valueState changes
+          if (aErrors.length) {
+            MessageBox.error("Please fix the following errors:\n" + aErrors.join("\n"));
+            return;
+          }
+
           try {
             oView.setBusy(true);
             const sSapClient = this._getSapClient();
-            const sServiceToken = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/?sap-client=${sSapClient}`;
-            const sCsrfToken = await this._fetchCsrfToken(sServiceToken);
+            const sCsrfToken = await this._fetchCsrfToken(
+              `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/?sap-client=${sSapClient}`
+            );
             if (!sCsrfToken) throw new Error("Missing CSRF token");
 
-            const aRows = oView.getModel("tableData").getProperty("/rows");
+            // Build map of original master data for dirty comparison
+            const oMainMap = {};
+            (this._aMainRows || []).forEach(m => { oMainMap[m.ItemId] = m; });
+
             let iSaved = 0;
 
             for (const row of aRows) {
+              // 2a. Brand-new line (added via Add Line)
+              if (row._state === "new") {
+                const oPayload = {
+                  EnvId: row.EnvId || "",
+                  PlantId: row.PlantId || "",
+                  MatGroup: row.MatGroup || "",
+                  MinQty: parseInt(row.MinQty, 10) || 0,
+                  ActionType: "C",
+                  ChangeNote: row.ChangeNote || ""
+                };
+                const oCreated = await this._postAndActivateReqRow(sReqId, sReqItemId, sConfId, oPayload, sCsrfToken, sSapClient);
+                if (oCreated?.ItemId) {
+                  row._reqItemId = { ReqId: oCreated.ReqId, ReqItemId: oCreated.ReqItemId, ItemId: oCreated.ItemId };
+                  row._state = "new";
+                  row.ActionType = "C";
+                }
+                iSaved++;
+                continue;
+              }
+
+              // 2b. Marked deleted
+              if (row._state === "deleted") {
+                if (!row._reqItemId) {
+                  // Chưa có draft row – tạo mới với ActionType X
+                  const oOrig = oMainMap[row.ItemId] || row;
+                  await this._postAndActivateReqRow(sReqId, sReqItemId, sConfId, {
+                    SourceItemId: row.ItemId,
+                    EnvId: row.EnvId || "", PlantId: row.PlantId || "",
+                    MatGroup: row.MatGroup || "", MinQty: parseInt(row.MinQty, 10) || 0,
+                    VersionNo: oOrig.VersionNo || 0,
+                    ActionType: "X", ChangeNote: row.ChangeNote || ""
+                  }, sCsrfToken, sSapClient);
+                } else {
+                  await this._editPatchActivateReqRow(row._reqItemId, { ActionType: "X" }, sCsrfToken, sSapClient);
+                }
+                iSaved++;
+                continue;
+              }
+
+              // 2c. Unchanged / untracked – check dirty
+              if (!row.ItemId) continue;
+              const oOrig = oMainMap[row.ItemId];
+              if (!oOrig) continue;
+              const bDirty =
+                String(row.PlantId || "") !== String(oOrig.PlantId || "") ||
+                String(row.MatGroup || "") !== String(oOrig.MatGroup || "") ||
+                String(row.MinQty || 0) !== String(oOrig.MinQty || 0) ||
+                String(row.ChangeNote || "").trim() !== String(oOrig.ChangeNote || "").trim();
+
+              if (!bDirty) continue;
+
               const oPayload = {
-                EnvId: row.EnvId || "", PlantId: row.PlantId || "", MatGroup: row.MatGroup || "",
-                MinQty: parseInt(row.MinQty, 10) || 0, ActionType: row.ActionType || "U"
+                PlantId: row.PlantId || "",
+                MatGroup: row.MatGroup || "",
+                MinQty: parseInt(row.MinQty, 10) || 0,
+                ChangeNote: row.ChangeNote || "",
+                ActionType: "U"
               };
 
-              if (row._state === "new") {
-                await this._postAndActivateReqRow(sReqId, oPayload, sCsrfToken, sSapClient);
-                iSaved++;
-              } else if (row._state === "deleted" || row._state === "modified" || row._state === "unchanged") {
+              if (!row._reqItemId) {
+                // First edit on this master row – CREATE draft
+                const oCreated = await this._postAndActivateReqRow(sReqId, sReqItemId, sConfId, {
+                  ...oPayload,
+                  SourceItemId: row.ItemId,
+                  EnvId: row.EnvId || "",
+                  VersionNo: oOrig.VersionNo || 0
+                }, sCsrfToken, sSapClient);
+                if (oCreated?.ItemId) {
+                  row._reqItemId = { ReqId: oCreated.ReqId, ReqItemId: oCreated.ReqItemId, ItemId: oCreated.ItemId };
+                  row._state = "modified";
+                  row.ActionType = "U";
+                }
+              } else {
+                // Already has a draft – PATCH it
                 await this._editPatchActivateReqRow(row._reqItemId, oPayload, sCsrfToken, sSapClient);
-                iSaved++;
+                row._state = "modified";
               }
+              iSaved++;
             }
 
-            if (sReqId) await this._patchRequestHeader(sReqId, sTitle, sReason, sCsrfToken, sSapClient, null);
+            // 3. Patch request header (title / reason)
+            const sEnvId = oView.getModel("requestContext").getProperty("/EnvId") || "DEV";
+            await this._patchRequestHeader(sReqId, sTitle, sReason, sCsrfToken, sSapClient, sEnvId);
 
-            await this._loadMainTable(sReqId);
+            // 4. Reload with overlay & exit edit mode
+            await this._loadMainTableWithOverlay(sEnvId, sReqId);
             oView.getModel("ui").setProperty("/editMode", false);
-            MessageToast.show("Saved to request successfully.");
+            MessageToast.show(iSaved > 0 ? iSaved + " change(s) saved." : "No changes detected.");
           } catch (e) {
             console.error(e);
             MessageBox.error(e.message || "Save failed");
@@ -405,7 +621,9 @@ sap.ui.define(
                 if (!sCsrfToken) { MessageBox.error("Cannot fetch CSRF token"); return; }
 
                 // Patch title/reason vào request header trước khi submit
-                const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+                const sEnvId = oRequestModel.getProperty("/EnvId")
+                  || this.getView().getModel("requestContext").getProperty("/EnvId")
+                  || "DEV";
                 const sTitle = oRequestModel.getProperty("/Title") || "";
                 const sReason = oRequestModel.getProperty("/Reason") || "";
                 await this._patchRequestHeader(sReqId, sTitle, sReason, sCsrfToken, sSapClient, sEnvId);
@@ -467,25 +685,35 @@ sap.ui.define(
         _patchRequestHeader: async function (sReqId, sTitle, sReason, sCsrfToken, sSapClient, sEnvId) {
           if (!sReqId) return;
           const sEnv = sEnvId || "DEV";
-          const sPatchUrl =
-            "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/" +
-            "ZC_CONF_REQ_H(ReqId=" + sReqId + ",EnvId='" + sEnv + "',IsActiveEntity=false)" +
-            "?sap-client=" + (sSapClient || this._getSapClient());
+          const sBase = "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/";
+          const sClient = "?sap-client=" + (sSapClient || this._getSapClient());
+          const sKeyActive = `ZC_CONF_REQ_H(ReqId=${sReqId},EnvId='${sEnv}',IsActiveEntity=true)`;
+          const sKeyDraft = `ZC_CONF_REQ_H(ReqId=${sReqId},EnvId='${sEnv}',IsActiveEntity=false)`;
+          const oHdr = { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" };
 
-          await fetch(sPatchUrl, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRF-Token": sCsrfToken,
-              "X-Requested-With": "XMLHttpRequest",
-              Accept: "application/json",
-            },
-            credentials: "include",
-            body: JSON.stringify({
-              ReqTitle: sTitle || "",
-              Reason: sReason || "",
-            }),
+          // Step 1: Edit — tạo draft từ active entity
+          const oEditResp = await fetch(sBase + sKeyActive + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Edit" + sClient, {
+            method: "POST", headers: oHdr, credentials: "include",
+            body: JSON.stringify({ PreserveChanges: false })
           });
+          // Nếu Edit lỗi (draft đã tồn tại) thì vẫn tiếp tục PATCH
+          if (!oEditResp.ok) console.warn("Header Edit step skipped:", await oEditResp.text().catch(() => ""));
+
+          // Step 2: PATCH draft — cập nhật title và reason
+          const oPatchResp = await fetch(sBase + sKeyDraft + sClient, {
+            method: "PATCH", headers: oHdr, credentials: "include",
+            body: JSON.stringify({ ReqTitle: sTitle || "", Reason: sReason || "" })
+          });
+          if (!oPatchResp.ok) {
+            console.warn("Header PATCH failed:", await oPatchResp.text().catch(() => ""));
+            return;
+          }
+
+          // Step 3: Activate — lưu draft thành active
+          const oActResp = await fetch(sBase + sKeyDraft + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Activate" + sClient, {
+            method: "POST", headers: oHdr, credentials: "include", body: "{}"
+          });
+          if (!oActResp.ok) console.warn("Header Activate failed:", await oActResp.text().catch(() => ""));
         },
 
         onNavBack: function () {
@@ -498,10 +726,21 @@ sap.ui.define(
           }
         },
 
-        onRefresh: function () {
+        onRefresh: async function () {
           const sReqId = this.getView().getModel("request").getProperty("/ReqId");
-          if (sReqId) this._loadMainTable(sReqId);
-          MessageToast.show("Refreshed");
+          const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+          this.getView().setBusy(true);
+          try {
+            if (sReqId) {
+              await this._loadMainTableWithOverlay(sEnvId, sReqId);
+            }
+            this._aMainRows = null;
+            MessageToast.show("Refreshed");
+          } catch (e) {
+            MessageBox.error("Refresh failed");
+          } finally {
+            this.getView().setBusy(false);
+          }
         },
 
         _applyBaseFilter: function () {
@@ -546,7 +785,13 @@ sap.ui.define(
           return new URLSearchParams(window.location.search).get("sap-client") || "324";
         },
 
-        onValueHelpEnv: function () {
+        onValueHelpEnv: function (oEvent) {
+          const oInput = oEvent.getSource();
+          const oCtx = oInput.getBindingContext("tableData");
+          this._oActiveEnvInput = {
+            path: oCtx ? oCtx.getPath() + "/EnvId" : "/EnvId",
+            model: oCtx ? "tableData" : "filter"
+          };
           if (!this._oEnvDialog) {
             this._oEnvDialog = new SelectDialog({
               title: "Select Environment",
@@ -556,7 +801,9 @@ sap.ui.define(
               },
               confirm: (oEvent) => {
                 const oItem = oEvent.getParameter("selectedItem");
-                if (oItem) this.getView().getModel("filter").setProperty("/EnvId", oItem.getTitle());
+                if (oItem && this._oActiveEnvInput) {
+                  this.getView().getModel(this._oActiveEnvInput.model).setProperty(this._oActiveEnvInput.path, oItem.getTitle());
+                }
               },
             });
             this._oEnvDialog.bindAggregation("items", {
@@ -568,7 +815,13 @@ sap.ui.define(
           this._oEnvDialog.open();
         },
 
-        onValueHelpPlant: function () {
+        onValueHelpPlant: function (oEvent) {
+          const oInput = oEvent.getSource();
+          const oCtx = oInput.getBindingContext("tableData");
+          this._oActivePlantInput = {
+            path: oCtx ? oCtx.getPath() + "/PlantId" : "/PlantId",
+            model: oCtx ? "tableData" : "filter"
+          };
           if (!this._oPlantDialog) {
             this._oPlantDialog = new SelectDialog({
               title: "Select Plant",
@@ -578,16 +831,48 @@ sap.ui.define(
               },
               confirm: (oEvent) => {
                 const oItem = oEvent.getParameter("selectedItem");
-                if (oItem) this.getView().getModel("filter").setProperty("/PlantId", oItem.getTitle());
+                if (oItem && this._oActivePlantInput) {
+                  this.getView().getModel(this._oActivePlantInput.model).setProperty(this._oActivePlantInput.path, oItem.getTitle());
+                }
               },
             });
             this._oPlantDialog.bindAggregation("items", {
               path: "/PlantUnit",
-              template: new StandardListItem({ title: "{PlantId}", description: "{PlantName}" }),
+              template: new StandardListItem({ title: "{PlantId}", description: "{Description}" }),
             });
             this.getView().addDependent(this._oPlantDialog);
           }
           this._oPlantDialog.open();
+        },
+
+        onValueHelpMatGroup: function (oEvent) {
+          const oInput = oEvent.getSource();
+          const oCtx = oInput.getBindingContext("tableData");
+          this._oActiveMatGrpInput = {
+            path: oCtx ? oCtx.getPath() + "/MatGroup" : "/MatGroup",
+            model: oCtx ? "tableData" : "filter"
+          };
+          if (!this._oMatGroupDialog) {
+            this._oMatGroupDialog = new SelectDialog({
+              title: "Select Material Group",
+              liveChange: (oEvent) => {
+                const sValue = oEvent.getParameter("value");
+                oEvent.getSource().getBinding("items").filter([new Filter("MatlGrp", FilterOperator.Contains, sValue)]);
+              },
+              confirm: (oEvent) => {
+                const oItem = oEvent.getParameter("selectedItem");
+                if (oItem && this._oActiveMatGrpInput) {
+                  this.getView().getModel(this._oActiveMatGrpInput.model).setProperty(this._oActiveMatGrpInput.path, oItem.getTitle());
+                }
+              },
+            });
+            this._oMatGroupDialog.bindAggregation("items", {
+              path: "/MatGroupVH",
+              template: new StandardListItem({ title: "{MatlGrp}" }),
+            });
+            this.getView().addDependent(this._oMatGroupDialog);
+          }
+          this._oMatGroupDialog.open();
         },
 
       }

@@ -233,7 +233,7 @@
               </VBox>
               <VBox class="sapUiSmallMarginEnd">
                 <Label text="Material Group"/>
-                <Input id="matGroupInput" width="12rem" value="{filter>/MatGroup}"/>
+                <Input id="matGroupInput" width="12rem" value="{filter>/MatGroup}" showValueHelp="true" valueHelpRequest=".onValueHelpMatGroup"/>
               </VBox>
             </HBox>
             <Toolbar design="Transparent">
@@ -262,53 +262,63 @@
             <Column width="12rem" minScreenWidth="Tablet" demandPopin="true"><Text text="Material Group"/></Column>
             <Column width="10rem" hAlign="End"><Text text="Min Quantity"/></Column>
             <Column width="8rem" minScreenWidth="Large" demandPopin="true" hAlign="End"><Text text="Version"/></Column>
-            <Column width="14rem" minScreenWidth="Large" demandPopin="true"><Text text="Changed At"/></Column>
+            <Column width="14rem" minScreenWidth="Large" demandPopin="true"><Text text="Change Note"/></Column>
           </columns>
 
           <items>
             <ColumnListItem vAlign="Middle"
-              highlight="{= ${_state} === 'modified' ? 'Information' : ${_state} === 'new' ? 'Success' : ${_state} === 'deleted' ? 'Error' : 'None'}">
+              highlight="{= ${tableData>_state} === 'modified' ? 'Information' : ${tableData>_state} === 'new' ? 'Success' : ${tableData>_state} === 'deleted' ? 'Error' : 'None'}">
               <cells>
 
                 <!-- Action badge -->
                 <ObjectStatus
-                    text="{= ${ActionType} === 'U' ? 'UPDATE' :
-                           ${ActionType} === 'C' ? 'CREATE' :
-                           ${ActionType} === 'X' ? 'DELETE' : '—' }"
-                    state="{= ${ActionType} === 'U' ? 'Information' :
-                              ${ActionType} === 'C' ? 'Success' :
-                              ${ActionType} === 'X' ? 'Error' : 'None' }"
+                    text="{= ${tableData>ActionType} === 'U' ? 'UPDATE' :
+                           ${tableData>ActionType} === 'C' ? 'CREATE' :
+                           ${tableData>ActionType} === 'X' ? 'DELETE' : '—' }"
+                    state="{= ${tableData>ActionType} === 'U' ? 'Information' :
+                              ${tableData>ActionType} === 'C' ? 'Success' :
+                              ${tableData>ActionType} === 'X' ? 'Error' : 'None' }"
                     inverted="true"/>
 
                 <!-- Environment -->
                 <HBox>
-                  <Text text="{EnvId}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
-                  <Input value="{EnvId}" visible="{ui>/editMode}" width="100%" maxLength="10"/>
+                  <Text text="{tableData>EnvId}" class="ssCellText"/>
                 </HBox>
 
                 <!-- Plant -->
                 <HBox>
-                  <Text text="{PlantId}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
-                  <Input value="{PlantId}" visible="{ui>/editMode}" width="100%" maxLength="10"/>
+                  <Text text="{tableData>PlantId}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
+                  <Input value="{tableData>PlantId}" visible="{ui>/editMode}" width="100%" maxLength="10"
+                         valueState="{tableData>_vs_PlantId}"
+                         valueStateText="Plant is required"
+                         showValueHelp="true" valueHelpRequest=".onValueHelpPlant"/>
                 </HBox>
 
                 <!-- Material Group -->
                 <HBox>
-                  <Text text="{MatGroup}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
-                  <Input value="{MatGroup}" visible="{ui>/editMode}" width="100%" maxLength="20"/>
+                  <Text text="{tableData>MatGroup}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
+                  <Input value="{tableData>MatGroup}" visible="{ui>/editMode}" width="100%" maxLength="20"
+                         valueState="{tableData>_vs_MatGroup}"
+                         valueStateText="Material Group is required"
+                         showValueHelp="true" valueHelpRequest=".onValueHelpMatGroup"/>
                 </HBox>
 
                 <!-- Min Quantity -->
                 <HBox justifyContent="End">
-                  <Text text="{MinQty}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
-                  <Input value="{MinQty}" type="Number" visible="{ui>/editMode}" width="100%"/>
+                  <Text text="{tableData>MinQty}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
+                  <Input value="{tableData>MinQty}" type="Number" visible="{ui>/editMode}" width="100%"
+                         valueState="{tableData>_vs_MinQty}"
+                         valueStateText="Min Quantity is required"/>
                 </HBox>
 
                 <!-- Version (read-only) -->
-                <Text text="{VersionNo}" class="ssVersionBadge" textAlign="End"/>
+                <Text text="{tableData>VersionNo}" class="ssVersionBadge" textAlign="End"/>
 
-                <!-- Changed At (read-only) -->
-                <Text text="{ChangedAt}" class="ssCellText"/>
+                <!-- Change Note -->
+                <HBox>
+                  <Text text="{tableData>ChangeNote}" visible="{= !${ui>/editMode} }" class="ssCellText" wrapping="true"/>
+                  <Input value="{tableData>ChangeNote}" visible="{ui>/editMode}" width="100%" maxLength="255"/>
+                </HBox>
 
               </cells>
             </ColumnListItem>
