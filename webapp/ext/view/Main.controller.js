@@ -9,6 +9,7 @@ sap.ui.define(
     "sap/m/SelectDialog",
     "sap/m/StandardListItem",
     "sap/ui/core/routing/History",
+    "./ExcelImport"
   ],
   function (
     Controller,
@@ -19,7 +20,8 @@ sap.ui.define(
     FilterOperator,
     SelectDialog,
     StandardListItem,
-    History
+    History,
+    ExcelImport
   ) {
     "use strict";
 
@@ -43,6 +45,8 @@ sap.ui.define(
             ConfName: oParams.get("ConfName") || "",
             ModuleId: oParams.get("ModuleId") || "",
             TargetCds: oParams.get("TargetCds") || "",
+            Status: oParams.get("Status") || "",
+            EnvId: oParams.get("EnvId") || "DEV",
             Mode: oParams.get("Mode") || oParams.get("mode") || "",
           };
         },
@@ -53,7 +57,7 @@ sap.ui.define(
 
           // UI state model
           this.getView().setModel(
-            new JSONModel({ editMode: true, requestCreated: false }),
+            new JSONModel({ editMode: true, requestCreated: false, viewOnly: false }),
             "ui"
           );
 
@@ -69,12 +73,13 @@ sap.ui.define(
 
           // Request model (ReqId, Status, Reason)
           const bHasReqId = !!oRequestContext.ReqId;
+          const sStatus = oRequestContext.Status || (bHasReqId ? "Draft" : "Not Created");
           this.getView().setModel(
             new JSONModel({
               ReqId: oRequestContext.ReqId || "",
               ReqItemId: "",
               ConfId: oRequestContext.ConfId || "",
-              Status: bHasReqId ? "Draft" : "Not Created",
+              Status: sStatus,
               StatusState: bHasReqId ? "Information" : "None",
               Reason: "",
               Title: "",
@@ -86,10 +91,17 @@ sap.ui.define(
           this.getView().setModel(new JSONModel({ rows: [] }), "tableData");
 
           if (bHasReqId) {
+            const bIsDraft = sStatus.toUpperCase() === "DRAFT";
             this.getView().getModel("ui").setProperty("/requestCreated", true);
-            this.getView().getModel("ui").setProperty("/editMode", false);
+            this.getView().getModel("ui").setProperty("/editMode", bIsDraft);
+            this.getView().getModel("ui").setProperty("/viewOnly", !bIsDraft);
+            this._fetchRequestHeader(oRequestContext.ReqId);
             this._fetchReqItem(oRequestContext.ReqId);
             this._loadMainTable(oRequestContext.ReqId);
+          } else if (oRequestContext.Mode === "VIEW") {
+            this.getView().getModel("ui").setProperty("/editMode", false);
+            this.getView().getModel("ui").setProperty("/viewOnly", true);
+            this._loadMainTableWithOverlay(oRequestContext.EnvId || "DEV", null);
           } else {
             // Initial state without ReqId
             this.getView().getModel("ui").setProperty("/editMode", false);
@@ -97,6 +109,26 @@ sap.ui.define(
         },
 
         // ── Load Data ──────────────────────────────────────────────────
+
+        _fetchRequestHeader: async function (sReqId) {
+          try {
+            const sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+            const sUrl =
+              "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/" +
+              "ZC_CONF_REQ_H(ReqId=" + sReqId + ",EnvId='" + sEnvId + "',IsActiveEntity=true)" +
+              "?$select=ReqId,ReqTitle,Reason,Status" +
+              "&sap-client=" + this._getSapClient();
+            const oResp = await fetch(sUrl, {
+              headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+              credentials: "include",
+            });
+            if (!oResp.ok) return;
+            const oData = await oResp.json();
+            const oModel = this.getView().getModel("request");
+            oModel.setProperty("/Title", oData.ReqTitle || "");
+            oModel.setProperty("/Reason", oData.Reason || "");
+          } catch (e) { console.warn("_fetchRequestHeader failed", e); }
+        },
 
         _fetchReqItem: async function (sReqId) {
           try {
@@ -136,14 +168,16 @@ sap.ui.define(
                 headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
                 credentials: "include"
               }),
-              fetch(`${sBaseUrl}MMSafeStock?$filter=ReqId eq ${sReqId}&$select=ItemId,ReqId,ReqItemId,SourceItemId,ActionType,EnvId,PlantId,MatGroup,MinQty,VersionNo,ChangeNote&$top=500&sap-client=${sClient}`, {
-                headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
-                credentials: "include"
-              })
+              sReqId
+                ? fetch(`${sBaseUrl}MMSafeStock?$filter=ReqId eq ${sReqId}&$select=ItemId,ReqId,ReqItemId,SourceItemId,ActionType,EnvId,PlantId,MatGroup,MinQty,VersionNo,ChangeNote&$top=500&sap-client=${sClient}`, {
+                  headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+                  credentials: "include"
+                })
+                : Promise.resolve({ ok: true, json: () => Promise.resolve({ value: [] }) })
             ]);
 
             const aMain = oMainResp.ok ? (await oMainResp.json()).value || [] : [];
-            const aReq = oReqResp.ok ? (await oReqResp.json()).value || [] : [];
+            const aReq = sReqId && oReqResp.ok ? (await oReqResp.json()).value || [] : [];
 
             console.log("[SafeStock] aMain count:", aMain.length, "aReq count:", aReq.length);
 
@@ -337,6 +371,114 @@ sap.ui.define(
           this._applyBaseFilter();
         },
 
+        /* ── Import from Excel ─────────────────────────────── */
+
+        _xlsxPromise: null,
+
+        _ensureXlsxLoaded: function () {
+          if (window.XLSX) return Promise.resolve();
+          if (this._xlsxPromise) return this._xlsxPromise;
+
+          var sPath = sap.ui.require.toUrl(
+            "zgsp26/conf/mng/mmsafestock/confmngfemmsafestock/lib/xlsx.min"
+          ) + ".js";
+
+          this._xlsxPromise = new Promise(function (resolve, reject) {
+            var oScript = document.createElement("script");
+            oScript.src = sPath;
+            oScript.onload = resolve;
+            oScript.onerror = function () { reject(new Error("Failed to load SheetJS library")); };
+            document.head.appendChild(oScript);
+          });
+          return this._xlsxPromise;
+        },
+
+        onImportFromExcel: function () {
+          var that = this;
+          var sReqId = this.getView().getModel("request").getProperty("/ReqId");
+          if (!sReqId) {
+            MessageBox.warning("Please create a request first before importing.");
+            return;
+          }
+
+          this._ensureXlsxLoaded().then(function () {
+            var oInput = document.createElement("input");
+            oInput.type = "file";
+            oInput.accept = ".xls,.xlsx,.csv";
+            oInput.style.display = "none";
+            document.body.appendChild(oInput);
+
+            oInput.addEventListener("change", function (oEvent) {
+              var oFile = oEvent.target.files[0];
+              if (!oFile) { document.body.removeChild(oInput); return; }
+
+              var oReader = new FileReader();
+              oReader.onload = function (e) {
+                try {
+                  that._processExcelData(e.target.result);
+                } catch (err) {
+                  MessageBox.error("Could not read the Excel file: " + err.message);
+                }
+                document.body.removeChild(oInput);
+              };
+              oReader.onerror = function () {
+                MessageBox.error("Failed to read file.");
+                document.body.removeChild(oInput);
+              };
+              oReader.readAsArrayBuffer(oFile);
+            });
+
+            oInput.click();
+          }).catch(function (err) {
+            MessageBox.error("Failed to load Excel library: " + err.message);
+          });
+        },
+
+        _processExcelData: function (arrayBuffer) {
+          var workbook = XLSX.read(arrayBuffer, { type: "array" });
+          var sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+          var result = ExcelImport.parseWorkbook(workbook, sEnvId);
+
+          if (result.errors.length && !result.rows.length) {
+            MessageBox.error(result.errors.join("\n"));
+            return;
+          }
+
+          if (result.rows.length > 500) {
+            var that = this;
+            MessageBox.confirm(
+              "The file contains " + result.rows.length + " rows. This may take a moment. Continue?",
+              {
+                onClose: function (sAction) {
+                  if (sAction === "OK") { that._insertImportedRows(result); }
+                }
+              }
+            );
+            return;
+          }
+
+          this._insertImportedRows(result);
+        },
+
+        _insertImportedRows: function (result) {
+          var oTableModel = this.getView().getModel("tableData");
+          var aRows = oTableModel.getProperty("/rows");
+
+          for (var i = result.rows.length - 1; i >= 0; i--) {
+            aRows.unshift(result.rows[i]);
+          }
+          oTableModel.setProperty("/rows", aRows);
+          this._applyBaseFilter();
+
+          var sMsg = result.rows.length + " row(s) imported from Excel.";
+          if (result.skipped > 0) {
+            sMsg += "\n" + result.skipped + " row(s) skipped (empty).";
+          }
+          MessageToast.show(sMsg);
+        },
+
+        /* ── End Import from Excel ─────────────────────────── */
+
         onDeleteLine: function () {
           const oTable = this.byId("safeStockTable");
           const aSelected = oTable.getSelectedContexts();
@@ -394,10 +536,17 @@ sap.ui.define(
           const oPostBody = {
             ReqId: sReqId, ReqItemId: sReqItemId, ConfId: sConfId,
             EnvId: oPayload.EnvId, PlantId: oPayload.PlantId, MatGroup: oPayload.MatGroup,
-            MinQty: oPayload.MinQty, ActionType: oPayload.ActionType
+            MinQty: oPayload.MinQty, ActionType: oPayload.ActionType,
+            ChangeNote: oPayload.ChangeNote || ""
           };
-          // Chỉ gửi SourceItemId khi có giá trị (backend từ chối empty string)
+          // Only send SourceItemId when set (backend rejects empty UUID string)
           if (oPayload.SourceItemId) oPostBody.SourceItemId = oPayload.SourceItemId;
+          // Send OldXxx fields from FE snapshot (matches Route Config pattern)
+          if (oPayload.OldEnvId !== undefined) oPostBody.OldEnvId = oPayload.OldEnvId;
+          if (oPayload.OldPlantId !== undefined) oPostBody.OldPlantId = oPayload.OldPlantId;
+          if (oPayload.OldMatGroup !== undefined) oPostBody.OldMatGroup = oPayload.OldMatGroup;
+          if (oPayload.OldMinQty !== undefined) oPostBody.OldMinQty = oPayload.OldMinQty;
+          if (oPayload.OldVersionNo !== undefined) oPostBody.OldVersionNo = oPayload.OldVersionNo;
 
           const oPostResp = await fetch(sBase + `MMSafeStock?sap-client=${sSapClient}`, {
             method: "POST",
@@ -418,21 +567,37 @@ sap.ui.define(
           const sBase = `/sap/opu/odata4/sap/zui_mm_safe_stock/srvd/sap/zsd_mm_safe_stock/0001/`;
           const sKeyPath = `ReqId=${oKeys.ReqId},ReqItemId=${oKeys.ReqItemId},ItemId=${oKeys.ItemId}`;
 
-          // 1. Edit (creates draft from active)
+          // Try to PATCH the draft directly (IsActiveEntity=false) - this handles rows
+          // that were created inside a draft request and never had an active entity.
+          const sPatchDraftUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=false)?sap-client=${sSapClient}`;
+          const oPatchDraftResp = await fetch(sPatchDraftUrl, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" },
+            body: JSON.stringify(oPayload)
+          });
+
+          if (oPatchDraftResp.ok) {
+            // Draft still exists — just activate it
+            const sActivateUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=false)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Activate?sap-client=${sSapClient}`;
+            const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
+            if (!oActResp.ok) throw new Error("Failed to activate draft row: " + (await oActResp.text()));
+            return;
+          }
+
+          // Fallback: active entity exists → create draft via Edit, then PATCH + Activate
           const sEditUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=true)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Edit?sap-client=${sSapClient}`;
           const oEditResp = await fetch(sEditUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: JSON.stringify({ PreserveChanges: true }) });
           if (!oEditResp.ok) throw new Error("Failed to start Edit on row: " + (await oEditResp.text()));
 
-          // 2. PATCH draft
           const sPatchUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=false)?sap-client=${sSapClient}`;
           const oPatchResp = await fetch(sPatchUrl, { method: "PATCH", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: JSON.stringify(oPayload) });
           if (!oPatchResp.ok) throw new Error("Failed to UPDATE draft row: " + (await oPatchResp.text()));
 
-          // 3. Activate
           const sActivateUrl = `${sBase}MMSafeStock(${sKeyPath},IsActiveEntity=false)/com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.Activate?sap-client=${sSapClient}`;
           const oActResp = await fetch(sActivateUrl, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" }, body: "{}" });
           if (!oActResp.ok) throw new Error("Failed to activate updated draft: " + (await oActResp.text()));
         },
+
 
         // ── Save & Submit ──────────────────────────────────────────────
 
@@ -453,9 +618,9 @@ sap.ui.define(
                 aErrors.push(sLabel + ": " + label + " is required.");
               }
             });
-            if (!row.MinQty && row.MinQty !== 0) {
+            if (!row.MinQty || row.MinQty <= 0) {
               row["_vs_MinQty"] = "Error";
-              aErrors.push(sLabel + ": Min Quantity is required.");
+              aErrors.push(sLabel + ": Min Quantity must be greater than 0.");
             }
           });
           return aErrors;
@@ -526,7 +691,12 @@ sap.ui.define(
                     EnvId: row.EnvId || "", PlantId: row.PlantId || "",
                     MatGroup: row.MatGroup || "", MinQty: parseInt(row.MinQty, 10) || 0,
                     VersionNo: oOrig.VersionNo || 0,
-                    ActionType: "X", ChangeNote: row.ChangeNote || ""
+                    ActionType: "X", ChangeNote: row.ChangeNote || "",
+                    OldEnvId: oOrig.EnvId || "",
+                    OldPlantId: oOrig.PlantId || "",
+                    OldMatGroup: oOrig.MatGroup || "",
+                    OldMinQty: parseInt(oOrig.MinQty, 10) || 0,
+                    OldVersionNo: oOrig.VersionNo || 0
                   }, sCsrfToken, sSapClient);
                 } else {
                   await this._editPatchActivateReqRow(row._reqItemId, { ActionType: "X" }, sCsrfToken, sSapClient);
@@ -556,12 +726,17 @@ sap.ui.define(
               };
 
               if (!row._reqItemId) {
-                // First edit on this master row – CREATE draft
+                // First edit on this master row – CREATE draft, send OldXxx from snapshot
                 const oCreated = await this._postAndActivateReqRow(sReqId, sReqItemId, sConfId, {
                   ...oPayload,
                   SourceItemId: row.ItemId,
                   EnvId: row.EnvId || "",
-                  VersionNo: oOrig.VersionNo || 0
+                  VersionNo: oOrig.VersionNo || 0,
+                  OldEnvId: oOrig.EnvId || "",
+                  OldPlantId: oOrig.PlantId || "",
+                  OldMatGroup: oOrig.MatGroup || "",
+                  OldMinQty: parseInt(oOrig.MinQty, 10) || 0,
+                  OldVersionNo: oOrig.VersionNo || 0
                 }, sCsrfToken, sSapClient);
                 if (oCreated?.ItemId) {
                   row._reqItemId = { ReqId: oCreated.ReqId, ReqItemId: oCreated.ReqItemId, ItemId: oCreated.ItemId };
@@ -690,31 +865,51 @@ sap.ui.define(
           const sKeyActive = `ZC_CONF_REQ_H(ReqId=${sReqId},EnvId='${sEnv}',IsActiveEntity=true)`;
           const sKeyDraft = `ZC_CONF_REQ_H(ReqId=${sReqId},EnvId='${sEnv}',IsActiveEntity=false)`;
           const oHdr = { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" };
+          const oBody = { ReqTitle: sTitle || "", Reason: sReason || "" };
 
-          // Step 1: Edit — tạo draft từ active entity
+          // Try patching the draft directly first.
+          // This handles cases where a draft already exists (e.g. from a previous edit).
+          const oPatchDraftResp = await fetch(sBase + sKeyDraft + sClient, {
+            method: "PATCH", headers: oHdr, credentials: "include",
+            body: JSON.stringify(oBody)
+          });
+
+          if (oPatchDraftResp.ok) {
+            // Activate the draft
+            const oActResp = await fetch(sBase + sKeyDraft + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Activate" + sClient, {
+              method: "POST", headers: oHdr, credentials: "include", body: "{}"
+            });
+            if (!oActResp.ok) console.warn("Header Activate failed:", await oActResp.text().catch(() => ""));
+            return;
+          }
+
+          // Fallback: active entity exists -- create draft via Edit, then PATCH + Activate
           const oEditResp = await fetch(sBase + sKeyActive + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Edit" + sClient, {
             method: "POST", headers: oHdr, credentials: "include",
             body: JSON.stringify({ PreserveChanges: false })
           });
-          // Nếu Edit lỗi (draft đã tồn tại) thì vẫn tiếp tục PATCH
-          if (!oEditResp.ok) console.warn("Header Edit step skipped:", await oEditResp.text().catch(() => ""));
+          if (!oEditResp.ok) {
+            console.warn("Header Edit step failed:", await oEditResp.text().catch(() => ""));
+            return;
+          }
 
-          // Step 2: PATCH draft — cập nhật title và reason
+          // PATCH draft
           const oPatchResp = await fetch(sBase + sKeyDraft + sClient, {
             method: "PATCH", headers: oHdr, credentials: "include",
-            body: JSON.stringify({ ReqTitle: sTitle || "", Reason: sReason || "" })
+            body: JSON.stringify(oBody)
           });
           if (!oPatchResp.ok) {
             console.warn("Header PATCH failed:", await oPatchResp.text().catch(() => ""));
             return;
           }
 
-          // Step 3: Activate — lưu draft thành active
+          // Activate
           const oActResp = await fetch(sBase + sKeyDraft + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Activate" + sClient, {
             method: "POST", headers: oHdr, credentials: "include", body: "{}"
           });
           if (!oActResp.ok) console.warn("Header Activate failed:", await oActResp.text().catch(() => ""));
         },
+
 
         onNavBack: function () {
           const oHistory = History.getInstance();

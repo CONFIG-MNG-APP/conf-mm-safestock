@@ -172,7 +172,13 @@
               text="Edit"
               icon="sap-icon://edit"
               press=".onEdit"
-              visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} }"/>
+              visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} &amp;&amp; !${ui>/viewOnly} }"/>
+
+          <Button
+              text="Import Excel"
+              icon="sap-icon://excel-attachment"
+              press=".onImportFromExcel"
+              visible="{= ${ui>/requestCreated} &amp;&amp; ${ui>/editMode} }"/>
 
           <Button
               text="Add Line"
