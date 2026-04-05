@@ -141,12 +141,51 @@
             <Action Name="Resume" IsBound="true">
                 <Parameter Name="_it" Type="com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.MMSafeStockType" Nullable="false"/>
             </Action>
+            <EntityType Name="MMSafeStockMainType">
+                <Key>
+                    <PropertyRef Name="ItemId"/>
+                </Key>
+                <Property Name="ItemId" Type="Edm.Guid" Nullable="false"/>
+                <Property Name="ReqId" Type="Edm.Guid"/>
+                <Property Name="EnvId" Type="Edm.String" Nullable="false" MaxLength="10"/>
+                <Property Name="PlantId" Type="Edm.String" Nullable="false" MaxLength="10"/>
+                <Property Name="MatGroup" Type="Edm.String" Nullable="false" MaxLength="10"/>
+                <Property Name="MinQty" Type="Edm.Int64" Nullable="false"/>
+                <Property Name="VersionNo" Type="Edm.Int32" Nullable="false"/>
+                <Property Name="CreatedBy" Type="Edm.String" Nullable="false" MaxLength="12"/>
+                <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Precision="7"/>
+            </EntityType>
+            <EntityType Name="EnvDefType">
+                <Key>
+                    <PropertyRef Name="EnvId"/>
+                </Key>
+                <Property Name="EnvId" Type="Edm.String" Nullable="false" MaxLength="10"/>
+                <Property Name="Description" Type="Edm.String" MaxLength="60"/>
+            </EntityType>
+            <EntityType Name="PlantUnitType">
+                <Key>
+                    <PropertyRef Name="PlantId"/>
+                </Key>
+                <Property Name="PlantId" Type="Edm.String" Nullable="false" MaxLength="10"/>
+                <Property Name="Description" Type="Edm.String" MaxLength="60"/>
+            </EntityType>
+            <EntityType Name="MatGroupVHType">
+                <Key>
+                    <PropertyRef Name="MatlGrp"/>
+                </Key>
+                <Property Name="MatlGrp" Type="Edm.String" Nullable="false" MaxLength="9"/>
+                <Property Name="Description" Type="Edm.String" MaxLength="60"/>
+            </EntityType>
             <EntityContainer Name="Container">
                 <EntitySet Name="I_DraftAdministrativeData" EntityType="com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.I_DraftAdministrativeDataType"/>
                 <EntitySet Name="MMSafeStock" EntityType="com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.MMSafeStockType">
                     <NavigationPropertyBinding Path="DraftAdministrativeData" Target="I_DraftAdministrativeData"/>
                     <NavigationPropertyBinding Path="SiblingEntity" Target="MMSafeStock"/>
                 </EntitySet>
+                <EntitySet Name="MMSafeStockMain" EntityType="com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.MMSafeStockMainType"/>
+                <EntitySet Name="EnvDef" EntityType="com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.EnvDefType"/>
+                <EntitySet Name="PlantUnit" EntityType="com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.PlantUnitType"/>
+                <EntitySet Name="MatGroupVH" EntityType="com.sap.gateway.srvd.zsd_mm_safe_stock.v0001.MatGroupVHType"/>
             </EntityContainer>
             <Annotations Target="SAP__self.MMSafeStockType/ReqId">
                 <Annotation Term="SAP__core.Computed"/>

@@ -4,7 +4,7 @@
     xmlns="sap.m"
     xmlns:core="sap.ui.core"
     xmlns:f="sap.f"
-    xmlns:form="sap.ui.layout.form"
+    xmlns:plugins="sap.m.plugins"
     displayBlock="true">
 
   <f:DynamicPage id="mainPage" toggleHeaderOnTitleClick="false" headerPinned="true">
@@ -15,7 +15,7 @@
         <f:heading>
           <HBox alignItems="Center">
             <core:Icon src="sap-icon://inventory" size="1.4rem" color="#0070f2" class="ssTitleIcon" />
-            <Title text="MM Safe Stock Request Maintenance" level="H2" class="ssTitleText" />
+            <Title text="Safe Stock Request Maintenance" level="H2" class="ssTitleText" />
           </HBox>
         </f:heading>
         <f:actions>
@@ -24,7 +24,7 @@
             type="Accept"
             icon="sap-icon://paper-plane"
             press=".onSubmitRequest"
-            visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} }" />
+            visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} &amp;&amp; ${request>/Status} === 'DRAFT' }" />
           <Button
             text="Save Draft"
             type="Emphasized"
@@ -103,29 +103,25 @@
               <core:Icon src="sap-icon://notes" color="#0070f2" size="0.8rem" class="sapUiSmallMarginEnd" />
               <Text text="REQUEST DETAILS" class="ssSectionLabel" />
             </HBox>
-
-            <!-- Title -->
             <HBox alignItems="Center" class="sapUiSmallMarginTop">
               <core:Icon src="sap-icon://text" color="#89919a" size="0.75rem" class="ssFieldIcon" />
               <VBox class="sapUiTinyMarginBegin" width="100%">
                 <Text text="Title" class="ssFieldLabel" />
                 <Input
-                  value="{request>/Title}"
-                  editable="{= ${request>/Status} !== 'SUBMITTED' &amp;&amp; ${request>/Status} !== 'APPROVED' }"
-                  width="100%"
-                  placeholder="Short title for this request" />
+                  value="{request>/ReqTitle}"
+                  placeholder="e.g. Adjust safe stock for warehouse X"
+                  editable="{= ${request>/Status} !== 'SUBMITTED' &amp;&amp; ${request>/Status} !== 'APPROVED' &amp;&amp; ${request>/Status} !== 'ACTIVE'}"
+                  width="100%" />
               </VBox>
             </HBox>
-
-            <!-- Reason -->
             <HBox alignItems="Center" class="sapUiTinyMarginTop">
               <core:Icon src="sap-icon://edit" color="#89919a" size="0.75rem" class="ssFieldIcon" />
               <VBox class="sapUiTinyMarginBegin" width="100%">
                 <Text text="Reason for Change" class="ssFieldLabel" />
                 <TextArea
                   value="{request>/Reason}"
-                  editable="{= ${request>/Status} !== 'SUBMITTED' &amp;&amp; ${request>/Status} !== 'APPROVED' }"
-                  rows="3"
+                  editable="{= ${request>/Status} !== 'SUBMITTED' &amp;&amp; ${request>/Status} !== 'APPROVED' &amp;&amp; ${request>/Status} !== 'ACTIVE'}"
+                  rows="2"
                   width="100%"
                   placeholder="Why is this safe stock change needed?" />
               </VBox>
@@ -136,139 +132,161 @@
       </f:DynamicPageHeader>
     </f:header>
 
-
     <!-- ─── Content ─── -->
     <f:content>
       <VBox class="sapUiMediumMarginBegin sapUiMediumMarginEnd sapUiSmallMarginTop sapUiMediumMarginBottom">
 
-        <!-- Info Banner -->
         <MessageStrip
-            text="Changes made here are part of a change request and will not take effect until approved."
-            type="Information"
-            showIcon="true"
-            class="sapUiSmallMarginBottom"/>
+          text="Changes made here are part of a change request and will not take effect until approved."
+          type="Information"
+          showIcon="true"
+          class="sapUiSmallMarginBottom" />
 
-        <!-- Edit Mode Warning -->
-        <MessageStrip
-            text="You are in edit mode. Save your changes or cancel before leaving this page."
-            type="Warning"
-            showIcon="true"
-            visible="{ui>/editMode}"
-            class="sapUiSmallMarginBottom"/>
+        <!-- ─── Summary Statistics ─── -->
+        <HBox
+          alignItems="Center"
+          justifyContent="Start"
+          class="sapUiSmallMarginBottom ssSummaryStrip"
+          visible="{= ${ui>/requestCreated} }">
+          <VBox class="ssStatBox">
+            <Text text="{ui>/totalCount}" class="ssStatNumber" />
+            <Text text="TOTAL" class="ssStatLabel" />
+          </VBox>
+          <VBox class="ssStatBox">
+            <Text text="{ui>/createCount}" class="ssStatNumber ssStatNumber--create" />
+            <Text text="CREATE" class="ssStatLabel" />
+          </VBox>
+          <VBox class="ssStatBox">
+            <Text text="{ui>/updateCount}" class="ssStatNumber ssStatNumber--update" />
+            <Text text="UPDATE" class="ssStatLabel" />
+          </VBox>
+          <VBox class="ssStatBox">
+            <Text text="{ui>/deleteCount}" class="ssStatNumber ssStatNumber--delete" />
+            <Text text="DELETE" class="ssStatLabel" />
+          </VBox>
+        </HBox>
 
         <!-- Table Toolbar -->
-        <OverflowToolbar class="sapUiTinyMarginBottom ssTabelToolbar">
+        <OverflowToolbar class="sapUiTinyMarginBottom ssTableToolbar">
           <Title text="Safe Stock Lines" level="H4" />
-          <ToolbarSpacer/>
+          <Text text="{ui>/rowCountText}" class="ssRowCount" visible="{= !!${ui>/rowCountText} }" />
+          <ToolbarSpacer />
 
           <Button
-              text="Create Request"
-              type="Emphasized"
-              icon="sap-icon://add-document"
-              press=".onCreateRequest"
-              visible="{= !${ui>/requestCreated} }"/>
+            text="Create Request"
+            type="Emphasized"
+            icon="sap-icon://add-document"
+            press=".onCreateRequest"
+            visible="{= !${ui>/requestCreated} &amp;&amp; !${ui>/viewOnly} }" />
 
           <Button
-              text="Edit"
-              icon="sap-icon://edit"
-              press=".onEdit"
-              visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} &amp;&amp; !${ui>/viewOnly} }"/>
+            text="Edit"
+            icon="sap-icon://edit"
+            press=".onEdit"
+            visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} &amp;&amp; !${ui>/viewOnly} }" />
 
           <Button
-              text="Import Excel"
-              icon="sap-icon://excel-attachment"
-              press=".onImportFromExcel"
-              visible="{= ${ui>/requestCreated} &amp;&amp; ${ui>/editMode} }"/>
+            text="Add Line"
+            icon="sap-icon://add"
+            press=".onCreate"
+            visible="{= ${ui>/editMode} &amp;&amp; !${ui>/viewOnly} }" />
 
           <Button
-              text="Add Line"
-              icon="sap-icon://add"
-              type="Emphasized"
-              press=".onAddLine"
-              visible="{= ${ui>/requestCreated} &amp;&amp; ${ui>/editMode} }"/>
+            text="Import Excel"
+            icon="sap-icon://upload-to-cloud"
+            press=".onImportFromExcel"
+            visible="{= ${ui>/editMode} &amp;&amp; !${ui>/viewOnly} }" />
 
           <Button
-              text="Delete"
-              icon="sap-icon://delete"
-              type="Reject"
-              press=".onDeleteLine"
-              visible="{= ${ui>/requestCreated} &amp;&amp; ${ui>/editMode} }"/>
+            text="Delete"
+            icon="sap-icon://delete"
+            type="Reject"
+            press=".onDelete"
+            visible="{= ${ui>/editMode} &amp;&amp; !${ui>/viewOnly} }" />
 
           <Button
-              text="Cancel"
-              icon="sap-icon://sys-cancel"
-              press=".onCancel"
-              visible="{= ${ui>/requestCreated} &amp;&amp; ${ui>/editMode} }"/>
+            text="Cancel"
+            icon="sap-icon://sys-cancel"
+            press=".onCancel"
+            visible="{= ${ui>/editMode} &amp;&amp; !${ui>/viewOnly} }" />
 
           <Button
-              icon="sap-icon://refresh"
-              tooltip="Refresh"
-              type="Transparent"
-              press=".onRefresh"
-              visible="{= !${ui>/editMode} }"/>
+            icon="sap-icon://refresh"
+            tooltip="Refresh"
+            type="Transparent"
+            press=".onRefresh"
+            visible="{= !${ui>/editMode} }" />
         </OverflowToolbar>
 
-
-        <!-- Filter Panel (collapsible) -->
-        <Panel
-            expandable="true"
-            expanded="false"
-            headerText="Filter Safe Stock Lines"
-            class="sapUiTinyMarginBottom sapUiContentPadding">
-          <VBox>
-            <HBox wrap="Wrap" class="sapUiTinyMarginTop sapUiTinyMarginBottom">
-              <VBox class="sapUiSmallMarginEnd">
-                <Label text="Search"/>
-                <SearchField id="searchField" width="16rem" search=".onSearch"/>
+        <!-- Filter Panel -->
+        <Panel expandable="true" expanded="false" headerText="Filter Safe Stock Lines" class="sapUiTinyMarginBottom">
+          <VBox class="sapUiSmallMargin">
+            <HBox wrap="Wrap">
+              <VBox class="sapUiSmallMarginEnd sapUiSmallMarginBottom">
+                <Label text="Search" />
+                <SearchField id="searchField" width="16rem" search=".onSearch" />
               </VBox>
-              <VBox class="sapUiSmallMarginEnd">
-                <Label text="Environment"/>
-                <Input
-                    id="envInput" width="12rem"
-                    value="{filter>/EnvId}"
-                    showValueHelp="true"
-                    valueHelpRequest=".onValueHelpEnv"/>
+              <VBox class="sapUiSmallMarginEnd sapUiSmallMarginBottom">
+                <Label text="Environment" />
+                <Input id="envInput" width="9rem" value="{filter>/EnvId}"
+                  showValueHelp="true" valueHelpRequest=".onValueHelpEnv" />
               </VBox>
-              <VBox class="sapUiSmallMarginEnd">
-                <Label text="Plant"/>
-                <Input
-                    id="plantInput" width="12rem"
-                    value="{filter>/PlantId}"
-                    showValueHelp="true"
-                    valueHelpRequest=".onValueHelpPlant"/>
+              <VBox class="sapUiSmallMarginEnd sapUiSmallMarginBottom">
+                <Label text="Plant" />
+                <Input id="plantInput" width="9rem" value="{filter>/PlantId}"
+                  showValueHelp="true" valueHelpRequest=".onValueHelpPlant" />
               </VBox>
-              <VBox class="sapUiSmallMarginEnd">
-                <Label text="Material Group"/>
-                <Input id="matGroupInput" width="12rem" value="{filter>/MatGroup}" showValueHelp="true" valueHelpRequest=".onValueHelpMatGroup"/>
+              <VBox class="sapUiSmallMarginEnd sapUiSmallMarginBottom">
+                <Label text="Material Group" />
+                <Input id="matGroupInput" width="10rem" value="{filter>/MatGroup}"
+                  showValueHelp="true" valueHelpRequest=".onValueHelpMatGroup" />
               </VBox>
             </HBox>
-            <Toolbar design="Transparent">
-              <ToolbarSpacer/>
-              <Button text="Go"    type="Emphasized" press=".onSearch"/>
-              <Button text="Clear" press=".onClearFilters"/>
-            </Toolbar>
+            <HBox justifyContent="End">
+              <Button text="Go"    type="Emphasized" press=".onSearch"      class="sapUiSmallMarginEnd" />
+              <Button text="Clear"                  press=".onClearFilters" />
+            </HBox>
           </VBox>
         </Panel>
 
         <!-- ─── Safe Stock Table ─── -->
         <Table
-            id="safeStockTable"
-            mode="{= ${ui>/editMode} ? 'MultiSelect' : 'None' }"
-            growing="true"
-            growingScrollToLoad="true"
-            inset="false"
-            noDataText="No safe stock lines found."
-            class="ssTable"
-            items="{ path: 'tableData>/rows' }">
+          id="safeStockTable"
+          mode="MultiSelect"
+          growing="true"
+          growingThreshold="20"
+          growingScrollToLoad="true"
+          inset="false"
+          noDataText="No safe stock lines — click 'Add Line' to add the first entry"
+          class="ssTable"
+          items="{path: 'tableData>/rows'}">
+
+          <dependents>
+            <plugins:ColumnResizer />
+          </dependents>
 
           <columns>
-            <Column width="8rem"><Text text="Action"/></Column>
-            <Column width="10rem"><Text text="Environment"/></Column>
-            <Column width="10rem"><Text text="Plant"/></Column>
-            <Column width="12rem" minScreenWidth="Tablet" demandPopin="true"><Text text="Material Group"/></Column>
-            <Column width="10rem" hAlign="End"><Text text="Min Quantity"/></Column>
-            <Column width="8rem" minScreenWidth="Large" demandPopin="true" hAlign="End"><Text text="Version"/></Column>
-            <Column width="14rem" minScreenWidth="Large" demandPopin="true"><Text text="Change Note"/></Column>
+            <Column width="7rem">
+              <Text text="Action" />
+            </Column>
+            <Column width="6rem">
+              <Text text="Env" />
+            </Column>
+            <Column width="9rem">
+              <Text text="Plant" />
+            </Column>
+            <Column width="12rem" minScreenWidth="Tablet" demandPopin="true">
+              <Text text="Material Group" />
+            </Column>
+            <Column width="10rem" hAlign="End">
+              <Text text="Min Quantity" />
+            </Column>
+            <Column width="5rem" minScreenWidth="Large" demandPopin="true" hAlign="End">
+              <Text text="Ver." />
+            </Column>
+            <Column width="14rem" minScreenWidth="Large" demandPopin="true">
+              <Text text="Change Note" />
+            </Column>
           </columns>
 
           <items>
@@ -278,52 +296,48 @@
 
                 <!-- Action badge -->
                 <ObjectStatus
-                    text="{= ${tableData>ActionType} === 'U' ? 'UPDATE' :
-                           ${tableData>ActionType} === 'C' ? 'CREATE' :
-                           ${tableData>ActionType} === 'X' ? 'DELETE' : '—' }"
-                    state="{= ${tableData>ActionType} === 'U' ? 'Information' :
-                              ${tableData>ActionType} === 'C' ? 'Success' :
-                              ${tableData>ActionType} === 'X' ? 'Error' : 'None' }"
-                    inverted="true"/>
+                  text="{= ${tableData>ActionType} === 'U' ? 'UPDATE' : ${tableData>ActionType} === 'C' ? 'CREATE' : ${tableData>ActionType} === 'X' ? 'DELETE' : '—'}"
+                  state="{= ${tableData>ActionType} === 'U' ? 'Information' : ${tableData>ActionType} === 'C' ? 'Success' : ${tableData>ActionType} === 'X' ? 'Error' : 'None'}"
+                  inverted="true" />
 
-                <!-- Environment -->
-                <HBox>
-                  <Text text="{tableData>EnvId}" class="ssCellText"/>
-                </HBox>
+                <!-- Environment (always read-only) -->
+                <ObjectStatus text="{tableData>EnvId}" state="Information" />
 
                 <!-- Plant -->
                 <HBox>
-                  <Text text="{tableData>PlantId}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
-                  <Input value="{tableData>PlantId}" visible="{ui>/editMode}" width="100%" maxLength="10"
-                         valueState="{tableData>_vs_PlantId}"
-                         valueStateText="Plant is required"
-                         showValueHelp="true" valueHelpRequest=".onValueHelpPlant"/>
+                  <Text text="{tableData>PlantId}" visible="{= !${ui>/editMode}}" class="ssCellText" />
+                  <Input value="{tableData>PlantId}" visible="{ui>/editMode}" width="100%"
+                    maxLength="10"
+                    valueState="{tableData>_vs_PlantId}"
+                    valueStateText="Plant is required"
+                    showValueHelp="true" valueHelpRequest=".onValueHelpPlant" />
                 </HBox>
 
                 <!-- Material Group -->
                 <HBox>
-                  <Text text="{tableData>MatGroup}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
-                  <Input value="{tableData>MatGroup}" visible="{ui>/editMode}" width="100%" maxLength="20"
-                         valueState="{tableData>_vs_MatGroup}"
-                         valueStateText="Material Group is required"
-                         showValueHelp="true" valueHelpRequest=".onValueHelpMatGroup"/>
+                  <Text text="{tableData>MatGroup}" visible="{= !${ui>/editMode}}" class="ssCellText" />
+                  <Input value="{tableData>MatGroup}" visible="{ui>/editMode}" width="100%"
+                    maxLength="20"
+                    valueState="{tableData>_vs_MatGroup}"
+                    valueStateText="Material Group is required"
+                    showValueHelp="true" valueHelpRequest=".onValueHelpMatGroup" />
                 </HBox>
 
                 <!-- Min Quantity -->
                 <HBox justifyContent="End">
-                  <Text text="{tableData>MinQty}" visible="{= !${ui>/editMode} }" class="ssCellText"/>
+                  <Text text="{tableData>MinQty}" visible="{= !${ui>/editMode}}" class="ssCellText" />
                   <Input value="{tableData>MinQty}" type="Number" visible="{ui>/editMode}" width="100%"
-                         valueState="{tableData>_vs_MinQty}"
-                         valueStateText="Min Quantity is required"/>
+                    valueState="{tableData>_vs_MinQty}"
+                    valueStateText="Min Quantity must be greater than 0" />
                 </HBox>
 
-                <!-- Version (read-only) -->
-                <Text text="{tableData>VersionNo}" class="ssVersionBadge" textAlign="End"/>
+                <!-- Version (always read-only) -->
+                <Text text="{tableData>VersionNo}" class="ssVersionBadge" textAlign="End" />
 
                 <!-- Change Note -->
                 <HBox>
-                  <Text text="{tableData>ChangeNote}" visible="{= !${ui>/editMode} }" class="ssCellText" wrapping="true"/>
-                  <Input value="{tableData>ChangeNote}" visible="{ui>/editMode}" width="100%" maxLength="255"/>
+                  <Text text="{tableData>ChangeNote}" visible="{= !${ui>/editMode}}" class="ssCellText" wrapping="true" />
+                  <Input value="{tableData>ChangeNote}" visible="{ui>/editMode}" width="100%" maxLength="255" />
                 </HBox>
 
               </cells>

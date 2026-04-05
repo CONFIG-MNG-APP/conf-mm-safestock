@@ -113,3 +113,53 @@
   font-size: 0.82rem !important;
   padding: 0 6px !important;
 }
+
+/* ─── Summary Statistics Strip ─── */
+.ssSummaryStrip {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 10px 20px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.ssStatBox {
+  padding: 2px 16px;
+  text-align: center;
+}
+
+.ssStatBox + .ssStatBox {
+  border-left: 1px solid #e0e0e0;
+}
+
+.ssStatNumber {
+  font-size: 1.3rem !important;
+  font-weight: 700 !important;
+  color: #32363a !important;
+  line-height: 1.2 !important;
+}
+
+.ssStatNumber--create { color: #107e3e !important; }
+.ssStatNumber--update { color: #0070f2 !important; }
+.ssStatNumber--delete { color: #bb0000 !important; }
+
+.ssStatLabel {
+  font-size: 0.65rem !important;
+  color: #89919a !important;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600 !important;
+}
+
+/* ─── Table Toolbar ─── */
+.ssTableToolbar {
+  background: transparent !important;
+  border-bottom: 1px solid #e8e8e8 !important;
+  padding-bottom: 8px !important;
+}
+
+.ssRowCount {
+  font-size: 0.8rem !important;
+  color: #89919a !important;
+  margin-left: 8px;
+}
