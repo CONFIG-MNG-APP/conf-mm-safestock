@@ -237,6 +237,16 @@ sap.ui.define(
                   return;
                 }
 
+                // === Email notification (fire-and-forget) ===
+                this._sendMailNotification({
+                  event: "SUBMITTED",
+                  reqId: sReqId,
+                  reqTitle: sTitle || sReqId,
+                  module: this._getModuleId() || "MM",
+                  envId: sEnvId || "DEV",
+                  triggeredBy: this._getCurrentUser()
+                });
+
                 oRequestModel.setProperty("/Status",      "SUBMITTED");
                 oRequestModel.setProperty("/StatusState", "Success");
                 oView.getModel("ui").setProperty("/editMode", false);
@@ -265,6 +275,38 @@ sap.ui.define(
         },
 
         // ── Private helpers ──────────────────────────────────────────────
+
+        // ── Email notification (fire-and-forget) ─────────────────────────
+        // Sends notification to external mail-service on Render.com.
+        // Failures are silently ignored and do NOT affect app logic.
+        _MAIL_SERVICE_URL: "https://abap19-mail-206.onrender.com/api/notify",
+        _MAIL_SERVICE_KEY: "abap19-mail-secret-key-change-me",
+
+        _sendMailNotification: function (oPayload) {
+          try {
+            fetch(this._MAIL_SERVICE_URL, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": this._MAIL_SERVICE_KEY
+              },
+              body: JSON.stringify(oPayload || {})
+            }).catch(function () { /* silently ignore */ });
+          } catch (e) { /* silently ignore */ }
+        },
+
+        /** Get current SAP user (best-effort) for triggeredBy field. */
+        _getCurrentUser: function () {
+          try {
+            if (sap && sap.ushell && sap.ushell.Container) {
+              var oService = sap.ushell.Container.getService("UserInfo");
+              if (oService && oService.getUser) {
+                return oService.getUser().getId() || "unknown";
+              }
+            }
+          } catch (e) { /* ignore */ }
+          return "unknown";
+        },
 
         _getSapClient: function () {
           return new URLSearchParams(window.location.search).get("sap-client") || "324";
