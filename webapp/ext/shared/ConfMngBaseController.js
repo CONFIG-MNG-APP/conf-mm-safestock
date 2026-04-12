@@ -413,55 +413,36 @@ sap.ui.define(
         _patchRequestHeader: async function (sReqId, sTitle, sReason) {
           if (!sReqId) return;
           const sSapClient = this._getSapClient();
-          const sEnvId =
-            this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
-          const sBase    = "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/";
-          const sClient  = "?sap-client=" + sSapClient;
-          const sKeyActive = "ZC_CONF_REQ_H(ReqId=" + sReqId + ",EnvId='" + sEnvId + "',IsActiveEntity=true)";
-          const sKeyDraft  = "ZC_CONF_REQ_H(ReqId=" + sReqId + ",EnvId='" + sEnvId + "',IsActiveEntity=false)";
+          const sEnvId     = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+          const sBase      = "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/";
+          const sClient    = "?sap-client=" + sSapClient;
 
           const sCsrfToken = await this._fetchCsrfToken(sBase + sClient);
           if (!sCsrfToken) return;
 
-          const oHdr  = { "Content-Type": "application/json", "X-CSRF-Token": sCsrfToken, "X-Requested-With": "XMLHttpRequest", Accept: "application/json" };
-          const oBody = { ReqTitle: sTitle || "", Reason: sReason || "" };
+          // Use updateReason action — runs MODIFY ENTITIES IN LOCAL MODE on backend,
+          // bypassing draft/ETag/lock entirely. Also updates ReqTitle (req_title param).
+          const sActionUrl = sBase +
+            "ZC_CONF_REQ_H(ReqId=" + sReqId + ",EnvId='" + sEnvId + "',IsActiveEntity=true)/" +
+            "com.sap.gateway.srvd.zsd_conf_req.v0001.updateReason" + sClient;
 
-          // Try patching draft directly
-          const oPatchDraftResp = await fetch(sBase + sKeyDraft + sClient, {
-            method: "PATCH", headers: oHdr, credentials: "include", body: JSON.stringify(oBody),
+          const oResp = await fetch(sActionUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": sCsrfToken,
+              "X-Requested-With": "XMLHttpRequest",
+              Accept: "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({ reason: sReason || "", req_title: sTitle || "" }),
           });
-          if (oPatchDraftResp.ok) {
-            const oActResp = await fetch(
-              sBase + sKeyDraft + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Activate" + sClient,
-              { method: "POST", headers: oHdr, credentials: "include", body: "{}" }
-            );
-            if (!oActResp.ok) console.warn("Header Activate failed:", await oActResp.text().catch(() => ""));
-            return;
+          if (!oResp.ok) {
+            const oErr = await oResp.json().catch(() => ({}));
+            const sMsg = oErr?.error?.message || ("updateReason HTTP " + oResp.status);
+            console.error("_patchRequestHeader (updateReason) failed:", oResp.status, oErr);
+            throw new Error(sMsg);
           }
-
-          // Fallback: Edit → PATCH → Activate
-          const oEditResp = await fetch(
-            sBase + sKeyActive + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Edit" + sClient,
-            { method: "POST", headers: oHdr, credentials: "include", body: JSON.stringify({ PreserveChanges: false }) }
-          );
-          if (!oEditResp.ok) {
-            console.warn("Header Edit step failed:", await oEditResp.text().catch(() => ""));
-            return;
-          }
-
-          const oPatchResp = await fetch(sBase + sKeyDraft + sClient, {
-            method: "PATCH", headers: oHdr, credentials: "include", body: JSON.stringify(oBody),
-          });
-          if (!oPatchResp.ok) {
-            console.warn("Header PATCH failed:", await oPatchResp.text().catch(() => ""));
-            return;
-          }
-
-          const oActResp = await fetch(
-            sBase + sKeyDraft + "/com.sap.gateway.srvd.zsd_conf_req.v0001.Activate" + sClient,
-            { method: "POST", headers: oHdr, credentials: "include", body: "{}" }
-          );
-          if (!oActResp.ok) console.warn("Header Activate failed:", await oActResp.text().catch(() => ""));
         },
       }
     );
