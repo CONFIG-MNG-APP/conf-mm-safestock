@@ -2,3 +2,5 @@ node_modules/
 dist/
 .cache/
 *.local.yaml
+.env
+archive.zip
