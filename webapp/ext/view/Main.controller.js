@@ -27,44 +27,44 @@ sap.ui.define(
       "zgsp26.conf.mng.mmsafestock.confmngfemmsafestock.ext.view.Main",
       {
         // ── Abstract overrides ────────────────────────────────────────────
-        _getModuleId:  function () { return "MM"; },
-        _getConfName:  function () { return "MM Safe Stock Configuration"; },
+        _getModuleId: function () { return "MM"; },
+        _getConfName: function () { return "MM Safe Stock Configuration"; },
         _getTargetCds: function () { return "ZI_MM_SAFE_STOCK"; },
 
         // ── Excel import config (SafeStock specific) ──────────────────────
         _getExcelImportConfig: function () {
           return {
             headerMap: {
-              "plant":           "PlantId",
-              "plantid":         "PlantId",
-              "plant_id":        "PlantId",
-              "plant id":        "PlantId",
-              "matgroup":        "MatGroup",
-              "mat group":       "MatGroup",
-              "mat_group":       "MatGroup",
-              "material group":  "MatGroup",
-              "minqty":          "MinQty",
-              "min qty":         "MinQty",
-              "min_qty":         "MinQty",
-              "minimum qty":     "MinQty",
-              "minimum quantity":"MinQty",
-              "changenote":      "ChangeNote",
-              "change note":     "ChangeNote",
-              "change_note":     "ChangeNote",
-              "note":            "ChangeNote",
+              "plant": "PlantId",
+              "plantid": "PlantId",
+              "plant_id": "PlantId",
+              "plant id": "PlantId",
+              "matgroup": "MatGroup",
+              "mat group": "MatGroup",
+              "mat_group": "MatGroup",
+              "material group": "MatGroup",
+              "minqty": "MinQty",
+              "min qty": "MinQty",
+              "min_qty": "MinQty",
+              "minimum qty": "MinQty",
+              "minimum quantity": "MinQty",
+              "changenote": "ChangeNote",
+              "change note": "ChangeNote",
+              "change_note": "ChangeNote",
+              "note": "ChangeNote",
             },
             boolFields: [],
             buildRow: function (sEnvId) {
               return {
-                ItemId:     "",
-                EnvId:      sEnvId || "DEV",
-                PlantId:    "",
-                MatGroup:   "",
-                MinQty:     0,
-                VersionNo:  0,
+                ItemId: "",
+                EnvId: sEnvId || "DEV",
+                PlantId: "",
+                MatGroup: "",
+                MinQty: 0,
+                VersionNo: 0,
                 ChangeNote: "",
                 ActionType: "C",
-                _state:     "new",
+                _state: "new",
                 _reqItemId: null,
               };
             },
@@ -72,7 +72,7 @@ sap.ui.define(
         },
 
         onInit: function () {
-          this._oModel    = this.getView().getModel() || this.getOwnerComponent().getModel();
+          this._oModel = this.getView().getModel() || this.getOwnerComponent().getModel();
           this._aMainRows = [];
           this._aFieldDef = [];
           this.getView().setModel(new JSONModel({ rows: [] }), "tableData");
@@ -92,16 +92,16 @@ sap.ui.define(
           const oRequestContext = this._getUrlParams();
           this.getView().setModel(new JSONModel(oRequestContext), "requestContext");
 
-          const bHasReqId  = !!oRequestContext.ReqId;
-          const sStatus    = oRequestContext.Status || (bHasReqId ? "Draft" : "Not Created");
+          const bHasReqId = !!oRequestContext.ReqId;
+          const sStatus = oRequestContext.Status || (bHasReqId ? "Draft" : "Not Created");
           const oRequestModel = new JSONModel({
-            ReqId:       oRequestContext.ReqId || "",
-            ReqItemId:   "",
-            ConfId:      oRequestContext.ConfId || "",
-            ReqTitle:    "",
-            Status:      sStatus,
+            ReqId: oRequestContext.ReqId || "",
+            ReqItemId: "",
+            ConfId: oRequestContext.ConfId || "",
+            ReqTitle: "",
+            Status: sStatus,
             StatusState: this._statusToState(sStatus),
-            Reason:      "",
+            Reason: "",
           });
           this.getView().setModel(oRequestModel, "request");
 
@@ -113,12 +113,12 @@ sap.ui.define(
           }
 
           if (bHasReqId) {
-            const bIsDraft    = sStatus.toUpperCase() === "DRAFT";
+            const bIsDraft = sStatus.toUpperCase() === "DRAFT";
             const bIsRejected = sStatus.toUpperCase() === "REJECTED";
-            const bCanEdit    = bIsDraft || bIsRejected;
+            const bCanEdit = bIsDraft || bIsRejected;
             oUIModel.setProperty("/requestCreated", true);
-            oUIModel.setProperty("/editMode",  bIsDraft);   // auto-edit only for Draft
-            oUIModel.setProperty("/viewOnly",  !bCanEdit);  // lock for Submitted/Approved/etc.
+            oUIModel.setProperty("/editMode", bIsDraft);   // auto-edit only for Draft
+            oUIModel.setProperty("/viewOnly", !bCanEdit);  // lock for Submitted/Approved/etc.
             this._fetchRequestHeader(oRequestContext.ReqId);
             this._fetchReqItem(oRequestContext.ReqId);
             this._loadMainTableWithOverlay(oRequestContext.EnvId, oRequestContext.ReqId);
@@ -132,7 +132,7 @@ sap.ui.define(
         },
 
         onCancel: async function () {
-          const oView  = this.getView();
+          const oView = this.getView();
           const sReqId = oView.getModel("request").getProperty("/ReqId");
           const sEnvId = oView.getModel("requestContext").getProperty("/EnvId") || "DEV";
 
@@ -158,17 +158,17 @@ sap.ui.define(
             return;
           }
           const oTableModel = this.getView().getModel("tableData");
-          const aRows       = oTableModel.getProperty("/rows");
+          const aRows = oTableModel.getProperty("/rows");
           aRows.unshift({
-            ItemId:     "",
-            EnvId:      this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV",
-            PlantId:    "",
-            MatGroup:   "",
-            MinQty:     0,
-            VersionNo:  0,
+            ItemId: "",
+            EnvId: this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV",
+            PlantId: "",
+            MatGroup: "",
+            MinQty: 0,
+            VersionNo: 0,
             ChangeNote: "",
             ActionType: "C",
-            _state:     "new",
+            _state: "new",
             _reqItemId: null,
           });
           oTableModel.setProperty("/rows", aRows);
@@ -185,7 +185,7 @@ sap.ui.define(
             onClose: (sAction) => {
               if (sAction !== "OK") return;
               const oTableModel = this.getView().getModel("tableData");
-              const aRows       = oTableModel.getProperty("/rows");
+              const aRows = oTableModel.getProperty("/rows");
 
               aItems.forEach(oItem => {
                 const oCtx = oItem.getBindingContext("tableData");
@@ -196,7 +196,7 @@ sap.ui.define(
                 if (oRow._state === "new") {
                   aRows.splice(iIdx, 1);
                 } else {
-                  aRows[iIdx]._state     = "deleted";
+                  aRows[iIdx]._state = "deleted";
                   aRows[iIdx].ActionType = "X";
                 }
               });
@@ -229,7 +229,7 @@ sap.ui.define(
         },
 
         onImportFromExcel: function () {
-          var that   = this;
+          var that = this;
           var sReqId = this.getView().getModel("request").getProperty("/ReqId");
           if (!sReqId) {
             MessageBox.warning("Please create a request first before importing.");
@@ -267,8 +267,8 @@ sap.ui.define(
 
         _processExcelData: function (arrayBuffer) {
           var workbook = XLSX.read(arrayBuffer, { type: "array" });
-          var sEnvId   = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
-          var result   = ExcelImport.parseWorkbook(workbook, sEnvId, this._getExcelImportConfig());
+          var sEnvId = this.getView().getModel("requestContext").getProperty("/EnvId") || "DEV";
+          var result = ExcelImport.parseWorkbook(workbook, sEnvId, this._getExcelImportConfig());
 
           if (result.errors.length && !result.rows.length) {
             MessageBox.error(result.errors.join("\n"));
@@ -301,16 +301,16 @@ sap.ui.define(
         /* ── End Import from Excel ─────────────────────────── */
 
         onSave: async function () {
-          const oView         = this.getView();
+          const oView = this.getView();
           const oRequestModel = oView.getModel("request");
-          const sReqId        = oRequestModel.getProperty("/ReqId");
-          const sReqItemId    = oRequestModel.getProperty("/ReqItemId") || "";
-          const sTitle        = oRequestModel.getProperty("/ReqTitle") || "";
-          const sReason       = oRequestModel.getProperty("/Reason")   || "";
+          const sReqId = oRequestModel.getProperty("/ReqId");
+          const sReqItemId = oRequestModel.getProperty("/ReqItemId") || "";
+          const sTitle = oRequestModel.getProperty("/ReqTitle") || "";
+          const sReason = oRequestModel.getProperty("/Reason") || "";
 
           const oTableModelV = oView.getModel("tableData");
-          const aAllRows     = oTableModelV.getProperty("/rows");
-          const aErrors      = this._validateRows(aAllRows);
+          const aAllRows = oTableModelV.getProperty("/rows");
+          const aErrors = this._validateRows(aAllRows);
           oTableModelV.setProperty("/rows", aAllRows);
 
           if (aErrors.length) {
@@ -329,8 +329,8 @@ sap.ui.define(
             if (!sCsrfToken) throw new Error("Cannot fetch CSRF token");
 
             const oTableModel = oView.getModel("tableData");
-            const aRows       = oTableModel.getProperty("/rows");
-            const sConfId     = oRequestModel.getProperty("/ConfId") || "";
+            const aRows = oTableModel.getProperty("/rows");
+            const sConfId = oRequestModel.getProperty("/ConfId") || "";
 
             if (!sReqItemId) {
               oView.setBusy(false);
@@ -348,18 +348,18 @@ sap.ui.define(
               // ── NEW row (ActionType = 'C') ───────────────────────────────
               if (row._state === "new") {
                 const oCreated = await this._postAndActivateReqRow({
-                  ReqId:      sReqId,
-                  ReqItemId:  sReqItemId,
-                  ConfId:     sConfId,
+                  ReqId: sReqId,
+                  ReqItemId: sReqItemId,
+                  ConfId: sConfId,
                   ActionType: "C",
-                  EnvId:      row.EnvId    || "",
-                  PlantId:    row.PlantId  || "",
-                  MatGroup:   row.MatGroup || "",
-                  MinQty:     parseInt(row.MinQty, 10) || 0,
+                  EnvId: row.EnvId || "",
+                  PlantId: row.PlantId || "",
+                  MatGroup: row.MatGroup || "",
+                  MinQty: parseInt(row.MinQty, 10) || 0,
                   ChangeNote: row.ChangeNote || "",
                 }, sCsrfToken);
                 if (oCreated?.ItemId) {
-                  row._state     = "new";   // keep badge
+                  row._state = "new";   // keep badge
                   row._reqItemId = { ReqId: oCreated.ReqId, ReqItemId: oCreated.ReqItemId, ItemId: oCreated.ItemId };
                   iSaved++;
                 }
@@ -371,21 +371,21 @@ sap.ui.define(
                 if (!row._reqItemId) {
                   const orig = mOrig[row.ItemId] || row;
                   await this._postAndActivateReqRow({
-                    ReqId:        sReqId,
-                    ReqItemId:    sReqItemId,
-                    ConfId:       sConfId,
-                    ActionType:   "X",
+                    ReqId: sReqId,
+                    ReqItemId: sReqItemId,
+                    ConfId: sConfId,
+                    ActionType: "X",
                     SourceItemId: row.ItemId,
-                    EnvId:        row.EnvId    || "",
-                    PlantId:      row.PlantId  || "",
-                    MatGroup:     row.MatGroup || "",
-                    MinQty:       parseInt(row.MinQty, 10) || 0,
-                    VersionNo:    row.VersionNo || 0,
-                    ChangeNote:   row.ChangeNote || "",
-                    OldEnvId:     orig.EnvId    || "",
-                    OldPlantId:   orig.PlantId  || "",
-                    OldMatGroup:  orig.MatGroup || "",
-                    OldMinQty:    parseInt(orig.MinQty, 10) || 0,
+                    EnvId: row.EnvId || "",
+                    PlantId: row.PlantId || "",
+                    MatGroup: row.MatGroup || "",
+                    MinQty: parseInt(row.MinQty, 10) || 0,
+                    VersionNo: row.VersionNo || 0,
+                    ChangeNote: row.ChangeNote || "",
+                    OldEnvId: orig.EnvId || "",
+                    OldPlantId: orig.PlantId || "",
+                    OldMatGroup: orig.MatGroup || "",
+                    OldMinQty: parseInt(orig.MinQty, 10) || 0,
                     OldVersionNo: orig.VersionNo || 0,
                   }, sCsrfToken);
                 } else {
@@ -403,34 +403,34 @@ sap.ui.define(
               if (!orig) continue;
 
               const bChanged =
-                (row.PlantId  || "") !== (orig.PlantId  || "") ||
+                (row.PlantId || "") !== (orig.PlantId || "") ||
                 (row.MatGroup || "") !== (orig.MatGroup || "") ||
-                String(row.MinQty  || 0) !== String(orig.MinQty  || 0) ||
+                String(row.MinQty || 0) !== String(orig.MinQty || 0) ||
                 !!(row.ChangeNote || "").trim();
 
               if (!bChanged) continue;
 
               if (!row._reqItemId) {
                 const oCreated = await this._postAndActivateReqRow({
-                  ReqId:        sReqId,
-                  ReqItemId:    sReqItemId,
-                  ConfId:       sConfId,
-                  ActionType:   "U",
+                  ReqId: sReqId,
+                  ReqItemId: sReqItemId,
+                  ConfId: sConfId,
+                  ActionType: "U",
                   SourceItemId: row.ItemId,
-                  EnvId:        row.EnvId    || "",
-                  PlantId:      row.PlantId  || "",
-                  MatGroup:     row.MatGroup || "",
-                  MinQty:       parseInt(row.MinQty, 10) || 0,
-                  VersionNo:    orig.VersionNo || 0,
-                  ChangeNote:   row.ChangeNote || "",
-                  OldEnvId:     orig.EnvId    || "",
-                  OldPlantId:   orig.PlantId  || "",
-                  OldMatGroup:  orig.MatGroup || "",
-                  OldMinQty:    parseInt(orig.MinQty, 10) || 0,
+                  EnvId: row.EnvId || "",
+                  PlantId: row.PlantId || "",
+                  MatGroup: row.MatGroup || "",
+                  MinQty: parseInt(row.MinQty, 10) || 0,
+                  VersionNo: orig.VersionNo || 0,
+                  ChangeNote: row.ChangeNote || "",
+                  OldEnvId: orig.EnvId || "",
+                  OldPlantId: orig.PlantId || "",
+                  OldMatGroup: orig.MatGroup || "",
+                  OldMinQty: parseInt(orig.MinQty, 10) || 0,
                   OldVersionNo: orig.VersionNo || 0,
                 }, sCsrfToken);
                 if (oCreated?.ItemId) {
-                  row._state     = "modified";
+                  row._state = "modified";
                   row._reqItemId = { ReqId: oCreated.ReqId, ReqItemId: oCreated.ReqItemId, ItemId: oCreated.ItemId };
                   row.ActionType = "U";
                   iSaved++;
@@ -439,9 +439,9 @@ sap.ui.define(
                 await this._editPatchActivateReqRow(
                   row._reqItemId,
                   {
-                    PlantId:    row.PlantId  || "",
-                    MatGroup:   row.MatGroup || "",
-                    MinQty:     parseInt(row.MinQty, 10) || 0,
+                    PlantId: row.PlantId || "",
+                    MatGroup: row.MatGroup || "",
+                    MinQty: parseInt(row.MinQty, 10) || 0,
                     ChangeNote: row.ChangeNote || "",
                   },
                   sCsrfToken
@@ -489,21 +489,21 @@ sap.ui.define(
         },
 
         onSearch: function () {
-          const oTable      = this.byId("safeStockTable");
-          const oBinding    = oTable.getBinding("items");
+          const oTable = this.byId("safeStockTable");
+          const oBinding = oTable.getBinding("items");
           const oFilterData = this.getView().getModel("filter").getData();
-          const aFilters    = [];
+          const aFilters = [];
 
-          if (oFilterData.EnvId)    aFilters.push(new Filter("EnvId",    FilterOperator.Contains, oFilterData.EnvId));
-          if (oFilterData.PlantId)  aFilters.push(new Filter("PlantId",  FilterOperator.Contains, oFilterData.PlantId));
+          if (oFilterData.EnvId) aFilters.push(new Filter("EnvId", FilterOperator.Contains, oFilterData.EnvId));
+          if (oFilterData.PlantId) aFilters.push(new Filter("PlantId", FilterOperator.Contains, oFilterData.PlantId));
           if (oFilterData.MatGroup) aFilters.push(new Filter("MatGroup", FilterOperator.Contains, oFilterData.MatGroup));
 
           const sSearch = this.byId("searchField").getValue();
           if (sSearch) {
             aFilters.push(new Filter({
               filters: [
-                new Filter("EnvId",    FilterOperator.Contains, sSearch),
-                new Filter("PlantId",  FilterOperator.Contains, sSearch),
+                new Filter("EnvId", FilterOperator.Contains, sSearch),
+                new Filter("PlantId", FilterOperator.Contains, sSearch),
                 new Filter("MatGroup", FilterOperator.Contains, sSearch),
               ],
               and: false,
@@ -522,8 +522,8 @@ sap.ui.define(
          */
         _loadValueHelps: async function () {
           const sSapClient = this._getSapClient();
-          const sSsBase    = this._getMmSafeStockServiceUrl();
-          const oHeaders   = { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" };
+          const sSsBase = this._getMmSafeStockServiceUrl();
+          const oHeaders = { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" };
 
           // All 3 VH entity sets are exposed directly in the safe stock service (ZSD_MM_SAFE_STOCK):
           //   ZC_ENV_DEF            → alias EnvDef
@@ -531,11 +531,11 @@ sap.ui.define(
           //   ZC_VH_MATL_GRP        → alias MatGroupVH
           const [oEnvResp, oPlantResp, oMatGrpResp] = await Promise.allSettled([
             fetch(sSsBase + "EnvDef?$select=EnvId,Description&$orderby=EnvId&sap-client=" + sSapClient,
-                  { headers: oHeaders, credentials: "include" }),
+              { headers: oHeaders, credentials: "include" }),
             fetch(sSsBase + "PlantUnit?$select=PlantId,Description&$orderby=PlantId&sap-client=" + sSapClient,
-                  { headers: oHeaders, credentials: "include" }),
+              { headers: oHeaders, credentials: "include" }),
             fetch(sSsBase + "MatGroupVH?$select=MatlGrp,Description&$orderby=MatlGrp&sap-client=" + sSapClient,
-                  { headers: oHeaders, credentials: "include" }),
+              { headers: oHeaders, credentials: "include" }),
           ]);
 
           const _val = async (settled) => {
@@ -548,7 +548,7 @@ sap.ui.define(
           ]);
 
           this.getView().setModel(new JSONModel({
-            EnvDef:    aEnv,
+            EnvDef: aEnv,
             PlantUnit: aPlant,
             MatGroupVH: aMatGrp,
           }), "vh");
@@ -557,14 +557,19 @@ sap.ui.define(
         },
 
         _validateRows: function (aRows) {
-          const aErrors   = [];
+          const aErrors = [];
           const aFieldDef = this._aFieldDef || [];
           const aRequired = aFieldDef.length > 0
             ? aFieldDef.filter(function (f) { return f.IsRequired; })
             : [
-                { FieldName: "PLANT_ID",  FieldLabel: "Plant" },
-                { FieldName: "MAT_GROUP", FieldLabel: "Material Group" },
-              ];
+              { FieldName: "PLANT_ID", FieldLabel: "Plant" },
+              { FieldName: "MAT_GROUP", FieldLabel: "Material Group" },
+            ];
+
+          // Build a Set of valid MatGroup keys from the loaded value-help
+          const oVhModel = this.getView().getModel("vh");
+          const aMatGrpVH = oVhModel ? (oVhModel.getProperty("/MatGroupVH") || []) : [];
+          const oValidMatGroups = new Set(aMatGrpVH.map(function (vh) { return vh.MatlGrp; }));
 
           aRows.forEach(function (row, iIdx) {
             Object.keys(row).forEach(function (k) {
@@ -576,11 +581,19 @@ sap.ui.define(
             aRequired.forEach(function (fieldDef) {
               const sJsKey = this._dbToPascal(fieldDef.FieldName);
               const sVsKey = "_vs_" + sJsKey;
-              if (!String(row[sJsKey] ?? "").trim()) {
+              const sVal = String(row[sJsKey] ?? "").trim();
+              if (!sVal) {
                 row[sVsKey] = "Error";
                 aErrors.push(sRowNum + ": " + fieldDef.FieldLabel + " is required.");
               }
             }.bind(this));
+
+            // Extra check: MatGroup value must exist in master data
+            const sMatGroup = String(row.MatGroup ?? "").trim();
+            if (sMatGroup && aMatGrpVH.length > 0 && !oValidMatGroups.has(sMatGroup)) {
+              row["_vs_MatGroup"] = "Error";
+              aErrors.push(sRowNum + ": Material Group '" + sMatGroup + "' does not exist. Please select a valid value.");
+            }
 
             if (!row.MinQty || row.MinQty <= 0) {
               row["_vs_MinQty"] = "Error";
@@ -608,12 +621,12 @@ sap.ui.define(
           });
           if (!oResp.ok) throw new Error("Cannot load MMSafeStockMain: " + oResp.status);
 
-          const aRaw  = (await oResp.json()).value || [];
+          const aRaw = (await oResp.json()).value || [];
           const aRows = aRaw.map(r => ({
             ...r,
             ActionType: "",
             ChangeNote: "",
-            _state:     "unchanged",
+            _state: "unchanged",
             _reqItemId: null,
           }));
 
@@ -623,7 +636,7 @@ sap.ui.define(
 
         /** Load main table + overlay with existing request delta rows */
         _loadMainTableWithOverlay: async function (sEnvId, sReqId) {
-          const sBase      = this._getMmSafeStockServiceUrl();
+          const sBase = this._getMmSafeStockServiceUrl();
           const sSapClient = this._getSapClient();
 
           const [oMainResp, oReqResp] = await Promise.all([
@@ -634,16 +647,16 @@ sap.ui.define(
             ),
             sReqId
               ? fetch(
-                  sBase + "MMSafeStock?$filter=ReqId eq " + sReqId +
-                  "&$select=ItemId,ReqId,ReqItemId,SourceItemId,ActionType,EnvId,PlantId,MatGroup,MinQty,VersionNo,ChangeNote" +
-                  "&$top=500&sap-client=" + sSapClient,
-                  { headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" }, credentials: "include" }
-                )
+                sBase + "MMSafeStock?$filter=ReqId eq " + sReqId +
+                "&$select=ItemId,ReqId,ReqItemId,SourceItemId,ActionType,EnvId,PlantId,MatGroup,MinQty,VersionNo,ChangeNote" +
+                "&$top=500&sap-client=" + sSapClient,
+                { headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" }, credentials: "include" }
+              )
               : Promise.resolve({ ok: true, json: () => Promise.resolve({ value: [] }) }),
           ]);
 
           const aMain = oMainResp.ok ? ((await oMainResp.json()).value || []) : [];
-          const aReq  = sReqId && oReqResp.ok ? ((await oReqResp.json()).value || []) : [];
+          const aReq = sReqId && oReqResp.ok ? ((await oReqResp.json()).value || []) : [];
           console.log("[SafeStock] aMain count:", aMain.length, "aReq count:", aReq.length);
 
           const isBlankId = id => !id || id === "00000000-0000-0000-0000-000000000000";
@@ -658,7 +671,7 @@ sap.ui.define(
             if (req) {
               return {
                 ...req,
-                _state:     req.ActionType === "X" ? "deleted" : "modified",
+                _state: req.ActionType === "X" ? "deleted" : "modified",
                 _reqItemId: { ReqId: req.ReqId, ReqItemId: req.ReqItemId, ItemId: req.ItemId },
               };
             }
@@ -683,10 +696,10 @@ sap.ui.define(
 
         /** POST payload to MMSafeStock → draft, then Activate → active entity */
         _postAndActivateReqRow: async function (oPayload, sCsrfToken) {
-          const sBase      = this._getMmSafeStockServiceUrl();
+          const sBase = this._getMmSafeStockServiceUrl();
           const sSapClient = this._getSapClient();
-          const sNs        = "com.sap.gateway.srvd.zsd_mm_safe_stock.v0001";
-          const oHeaders   = {
+          const sNs = "com.sap.gateway.srvd.zsd_mm_safe_stock.v0001";
+          const oHeaders = {
             "Content-Type": "application/json",
             "X-CSRF-Token": sCsrfToken,
             "X-Requested-With": "XMLHttpRequest",
@@ -729,10 +742,10 @@ sap.ui.define(
          *  @param {object} oKeys  { ReqId, ReqItemId, ItemId } of the active entity
          */
         _editPatchActivateReqRow: async function (oKeys, oPayload, sCsrfToken) {
-          const sBase      = this._getMmSafeStockServiceUrl();
+          const sBase = this._getMmSafeStockServiceUrl();
           const sSapClient = this._getSapClient();
-          const sNs        = "com.sap.gateway.srvd.zsd_mm_safe_stock.v0001";
-          const oHeaders   = {
+          const sNs = "com.sap.gateway.srvd.zsd_mm_safe_stock.v0001";
+          const oHeaders = {
             "Content-Type": "application/json",
             "X-CSRF-Token": sCsrfToken,
             "X-Requested-With": "XMLHttpRequest",
@@ -803,7 +816,7 @@ sap.ui.define(
         },
 
         _updateStats: function () {
-          const oUI   = this.getView().getModel("ui");
+          const oUI = this.getView().getModel("ui");
           const aRows = this.getView().getModel("tableData").getProperty("/rows") || [];
           let iCreate = 0, iUpdate = 0, iDelete = 0;
           aRows.forEach(function (r) {
@@ -812,7 +825,7 @@ sap.ui.define(
             else if (r.ActionType === "X") iDelete++;
           });
           const iVisible = aRows.filter(function (r) { return r._state !== "deleted"; }).length;
-          oUI.setProperty("/totalCount",  aRows.length);
+          oUI.setProperty("/totalCount", aRows.length);
           oUI.setProperty("/createCount", iCreate);
           oUI.setProperty("/updateCount", iUpdate);
           oUI.setProperty("/deleteCount", iDelete);
@@ -822,12 +835,12 @@ sap.ui.define(
         /** Map request status string → SAP UI5 ObjectStatus state */
         _statusToState: function (sStatus) {
           switch ((sStatus || "").toUpperCase()) {
-            case "DRAFT":     return "Warning";
+            case "DRAFT": return "Warning";
             case "SUBMITTED": return "Information";
-            case "APPROVED":  return "Success";
-            case "REJECTED":  return "Error";
-            case "PROMOTED":  return "Success";
-            default:          return "None";
+            case "APPROVED": return "Success";
+            case "REJECTED": return "Error";
+            case "PROMOTED": return "Success";
+            default: return "None";
           }
         },
 
@@ -851,7 +864,7 @@ sap.ui.define(
         },
 
         onValueHelpEnv: function (oEvent) {
-          this._oCellCtx   = oEvent.getSource().getBindingContext("tableData") || null;
+          this._oCellCtx = oEvent.getSource().getBindingContext("tableData") || null;
           this._sCellField = "EnvId";
           if (!this._oEnvDialog) {
             this._oEnvDialog = new SelectDialog({
@@ -884,7 +897,7 @@ sap.ui.define(
         },
 
         onValueHelpPlant: function (oEvent) {
-          this._oCellCtx   = oEvent.getSource().getBindingContext("tableData") || null;
+          this._oCellCtx = oEvent.getSource().getBindingContext("tableData") || null;
           this._sCellField = "PlantId";
           if (!this._oPlantDialog) {
             this._oPlantDialog = new SelectDialog({
@@ -917,7 +930,7 @@ sap.ui.define(
         },
 
         onValueHelpMatGroup: function (oEvent) {
-          this._oCellCtx   = oEvent.getSource().getBindingContext("tableData") || null;
+          this._oCellCtx = oEvent.getSource().getBindingContext("tableData") || null;
           this._sCellField = "MatGroup";
           if (!this._oMatGroupDialog) {
             this._oMatGroupDialog = new SelectDialog({
