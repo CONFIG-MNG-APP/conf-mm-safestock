@@ -588,6 +588,24 @@ sap.ui.define(
             }
           }.bind(this));
 
+          // ── Duplicate business key check (PlantId + MatGroup) ────────────
+          const aSeen = [];
+          aRows.forEach(function (row, iIdx) {
+            if (row._state === "deleted") return;
+            const sPlant    = String(row.PlantId  || "").trim();
+            const sMatGroup = String(row.MatGroup || "").trim();
+            if (!sPlant || !sMatGroup) return;
+
+            const sKey = sPlant + "|" + sMatGroup;
+            if (aSeen.indexOf(sKey) >= 0) {
+              row._vs_PlantId  = "Error";
+              row._vs_MatGroup = "Error";
+              aErrors.push("Row " + (iIdx + 1) + ": Duplicate entry — Plant '" + sPlant + "' + Material Group '" + sMatGroup + "' already exists in this request.");
+            } else {
+              aSeen.push(sKey);
+            }
+          });
+
           return aErrors;
         },
 
