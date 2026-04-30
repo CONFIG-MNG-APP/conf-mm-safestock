@@ -570,6 +570,8 @@ sap.ui.define(
           const oVhModel = this.getView().getModel("vh");
           const aMatGrpVH = oVhModel ? (oVhModel.getProperty("/MatGroupVH") || []) : [];
           const oValidMatGroups = new Set(aMatGrpVH.map(function (vh) { return vh.MatlGrp; }));
+          const aPlantVH = oVhModel ? (oVhModel.getProperty("/PlantUnit") || []) : [];
+          const oValidPlants = new Set(aPlantVH.map(function (vh) { return vh.PlantId; }));
 
           aRows.forEach(function (row, iIdx) {
             Object.keys(row).forEach(function (k) {
@@ -587,6 +589,13 @@ sap.ui.define(
                 aErrors.push(sRowNum + ": " + fieldDef.FieldLabel + " is required.");
               }
             }.bind(this));
+
+            // Extra check: PlantId must exist in master data
+            const sPlantId = String(row.PlantId ?? "").trim();
+            if (sPlantId && aPlantVH.length > 0 && !oValidPlants.has(sPlantId)) {
+              row["_vs_PlantId"] = "Error";
+              aErrors.push(sRowNum + ": Plant '" + sPlantId + "' does not exist. Please select a valid value.");
+            }
 
             // Extra check: MatGroup value must exist in master data
             const sMatGroup = String(row.MatGroup ?? "").trim();

@@ -307,6 +307,7 @@
                 <HBox>
                   <Text text="{tableData>PlantId}" visible="{= !${ui>/editMode}}" class="ssCellText" />
                   <Input value="{tableData>PlantId}" visible="{ui>/editMode}" width="100%"
+                    editable="{= ${tableData>_state} === 'new'}"
                     maxLength="10"
                     valueState="{tableData>_vs_PlantId}"
                     valueStateText="Plant is required"
@@ -317,6 +318,7 @@
                 <HBox>
                   <Text text="{tableData>MatGroup}" visible="{= !${ui>/editMode}}" class="ssCellText" />
                   <Input value="{tableData>MatGroup}" visible="{ui>/editMode}" width="100%"
+                    editable="{= ${tableData>_state} === 'new'}"
                     maxLength="20"
                     valueState="{tableData>_vs_MatGroup}"
                     valueStateText="Material Group is required"
