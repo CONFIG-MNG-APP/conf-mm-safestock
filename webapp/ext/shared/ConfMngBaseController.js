@@ -181,87 +181,138 @@ sap.ui.define(
             MessageBox.warning("Request has not been created yet.");
             return;
           }
-          if ((sStatus || "").toUpperCase() !== "DRAFT") {
+          if (!["DRAFT", "REJECTED"].includes((sStatus || "").toUpperCase())) {
             MessageBox.warning(
-              "Only DRAFT requests can be submitted. Current status: " + sStatus
+              "Only DRAFT or REJECTED requests can be submitted. Current status: " + sStatus
             );
             return;
           }
 
-          MessageBox.confirm("Submit this request for approval?", {
-            onClose: async (sAction) => {
-              if (sAction !== "OK") return;
-              const oView = this.getView();
-              try {
-                oView.setBusy(true);
-                const sSapClient = this._getSapClient();
-                const sCsrfToken = await this._fetchCsrfToken(
-                  "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/?sap-client=" + sSapClient
-                );
-                if (!sCsrfToken) {
-                  MessageBox.error("Cannot fetch CSRF token");
-                  return;
-                }
-
-                const sTitle  = oRequestModel.getProperty("/ReqTitle") || "";
-                const sReason = oRequestModel.getProperty("/Reason")   || "";
-                await this._patchRequestHeader(sReqId, sTitle, sReason);
-
-                const sEnvId = oView.getModel("requestContext").getProperty("/EnvId") || "DEV";
-                const sActionUrl =
-                  "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/" +
-                  "ZC_CONF_REQ_H(ReqId=" + sReqId +
-                  ",EnvId='" + sEnvId + "',IsActiveEntity=true)/" +
-                  "com.sap.gateway.srvd.zsd_conf_req.v0001.submit" +
-                  "?sap-client=" + sSapClient;
-
-                const oResponse = await fetch(sActionUrl, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRF-Token": sCsrfToken,
-                    "X-Requested-With": "XMLHttpRequest",
-                    Accept: "application/json",
-                  },
-                  credentials: "include",
-                  body: JSON.stringify({}),
-                });
-
-                if (!oResponse.ok) {
-                  const oErr = await oResponse.json().catch(() => ({}));
-                  const aDetails = oErr?.error?.details;
-                  const sMsg = (Array.isArray(aDetails) && aDetails.length)
-                    ? aDetails.map(d => d.message).join("\n")
-                    : (oErr?.error?.message || "Submit failed: " + oResponse.status);
-                  MessageBox.error(sMsg);
-                  return;
-                }
-
-                oRequestModel.setProperty("/Status",      "SUBMITTED");
-                oRequestModel.setProperty("/StatusState", "Success");
-                oView.getModel("ui").setProperty("/editMode", false);
-
-                const sConfName =
-                  oView.getModel("requestContext").getProperty("/ConfName") || "Configuration";
-                MessageBox.success(
-                  'Request "' + (sTitle || sReqId) +
-                    '" has been submitted for approval.\n\n' +
-                    'Your manager will review the proposed changes to "' + sConfName + '" and approve or reject them.',
-                  {
-                    title: "Request Submitted Successfully",
-                    actions: [MessageBox.Action.OK],
-                    emphasizedAction: MessageBox.Action.OK,
-                    onClose: function () { window.history.back(); },
-                  }
-                );
-              } catch (e) {
-                console.error(e);
-                MessageBox.error(e?.message || "Submit failed");
-              } finally {
-                oView.setBusy(false);
+          const fnExecuteSubmit = async () => {
+            const oView = this.getView();
+            try {
+              oView.setBusy(true);
+              const sSapClient = this._getSapClient();
+              const sCsrfToken = await this._fetchCsrfToken(
+                "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/?sap-client=" + sSapClient
+              );
+              if (!sCsrfToken) {
+                MessageBox.error("Cannot fetch CSRF token");
+                return;
               }
-            },
-          });
+
+              const sTitle  = oRequestModel.getProperty("/ReqTitle") || "";
+              const sReason = oRequestModel.getProperty("/Reason")   || "";
+              await this._patchRequestHeader(sReqId, sTitle, sReason);
+
+              const sEnvId = oView.getModel("requestContext").getProperty("/EnvId") || "DEV";
+              const sActionUrl =
+                "/sap/opu/odata4/sap/zui_conf_req/srvd/sap/zsd_conf_req/0001/" +
+                "ZC_CONF_REQ_H(ReqId=" + sReqId +
+                ",EnvId='" + sEnvId + "',IsActiveEntity=true)/" +
+                "com.sap.gateway.srvd.zsd_conf_req.v0001.submit" +
+                "?sap-client=" + sSapClient;
+
+              const oResponse = await fetch(sActionUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-CSRF-Token": sCsrfToken,
+                  "X-Requested-With": "XMLHttpRequest",
+                  Accept: "application/json",
+                },
+                credentials: "include",
+                body: JSON.stringify({}),
+              });
+
+              if (!oResponse.ok) {
+                const oErr = await oResponse.json().catch(() => ({}));
+                const aDetails = oErr?.error?.details;
+                const sMsg = (Array.isArray(aDetails) && aDetails.length)
+                  ? aDetails.map(d => d.message).join("\n")
+                  : (oErr?.error?.message || "Submit failed: " + oResponse.status);
+                MessageBox.error(sMsg);
+                return;
+              }
+
+              oRequestModel.setProperty("/Status",      "SUBMITTED");
+              oRequestModel.setProperty("/StatusState", "Success");
+              oView.getModel("ui").setProperty("/editMode", false);
+
+              const sConfName =
+                oView.getModel("requestContext").getProperty("/ConfName") || "Configuration";
+              MessageBox.success(
+                'Request "' + (sTitle || sReqId) +
+                  '" has been submitted for approval.\n\n' +
+                  'Your manager will review the proposed changes to "' + sConfName + '" and approve or reject them.',
+                {
+                  title: "Request Submitted Successfully",
+                  actions: [MessageBox.Action.OK],
+                  emphasizedAction: MessageBox.Action.OK,
+                  onClose: function () { window.history.back(); },
+                }
+              );
+            } catch (e) {
+              console.error(e);
+              MessageBox.error(e?.message || "Submit failed");
+            } finally {
+              oView.setBusy(false);
+            }
+          };
+
+          if ((sStatus || "").toUpperCase() === "REJECTED") {
+            const oTextArea = new sap.m.TextArea({
+              placeholder: "Describe what you changed to address the rejection...",
+              rows: 4,
+              width: "100%",
+              maxLength: 500,
+            });
+            const oDialog = new sap.m.Dialog({
+              title: "Re-submit Request",
+              type: "Message",
+              content: [
+                new sap.m.Text({
+                  text: "This request was rejected. Describe what changes you made before resubmitting.",
+                }),
+                new sap.m.VBox({ height: "0.5rem" }),
+                oTextArea,
+              ],
+              beginButton: new sap.m.Button({
+                text: "Submit",
+                type: "Accept",
+                press: function () {
+                  const sNote = oTextArea.getValue().trim();
+                  if (!sNote) {
+                    oTextArea.setValueState("Error");
+                    oTextArea.setValueStateText("Please describe what you changed.");
+                    return;
+                  }
+                  oTextArea.setValueState("None");
+                  const sExisting = oRequestModel.getProperty("/Reason") || "";
+                  oRequestModel.setProperty(
+                    "/Reason",
+                    "[Resubmit] " + sNote + (sExisting ? "\n\n[Previous] " + sExisting : "")
+                  );
+                  oDialog.close();
+                  fnExecuteSubmit();
+                },
+              }),
+              endButton: new sap.m.Button({
+                text: "Cancel",
+                press: function () { oDialog.close(); },
+              }),
+              afterClose: function () { oDialog.destroy(); },
+            });
+            this.getView().addDependent(oDialog);
+            oDialog.open();
+          } else {
+            MessageBox.confirm("Submit this request for approval?", {
+              onClose: async (sAction) => {
+                if (sAction !== "OK") return;
+                await fnExecuteSubmit();
+              },
+            });
+          }
         },
 
         // ── Private helpers ──────────────────────────────────────────────

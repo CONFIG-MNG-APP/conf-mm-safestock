@@ -24,7 +24,7 @@
             type="Accept"
             icon="sap-icon://paper-plane"
             press=".onSubmitRequest"
-            visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} &amp;&amp; ${request>/Status} === 'DRAFT' }" />
+            visible="{= ${ui>/requestCreated} &amp;&amp; !${ui>/editMode} &amp;&amp; (${request>/Status} === 'DRAFT' || ${request>/Status} === 'REJECTED') }" />
           <Button
             text="Save Draft"
             type="Emphasized"
