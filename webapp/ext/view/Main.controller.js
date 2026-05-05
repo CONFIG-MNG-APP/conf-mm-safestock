@@ -84,6 +84,11 @@ sap.ui.define(
           });
           this.getView().setModel(oUIModel, "ui");
 
+          // Auto-update summary counters whenever the table finishes rendering items
+          this.byId("safeStockTable").attachUpdateFinished(function () {
+            this._updateStats();
+          }.bind(this));
+
           const oFilterModel = new JSONModel({
             EnvId: "", PlantId: "", MatGroup: "", Search: "",
           });
@@ -659,6 +664,7 @@ sap.ui.define(
 
           this._aMainRows = aRows.map(r => ({ ...r }));
           this.getView().getModel("tableData").setProperty("/rows", aRows);
+          this._updateStats();
         },
 
         /** Load main table + overlay with existing request delta rows */
@@ -719,6 +725,7 @@ sap.ui.define(
 
           this._aMainRows = aMain.map(r => ({ ...r }));
           this.getView().getModel("tableData").setProperty("/rows", aRows);
+          this._updateStats();
         },
 
         /** POST payload to MMSafeStock → draft, then Activate → active entity */
